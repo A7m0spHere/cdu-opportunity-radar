@@ -15,7 +15,7 @@
 | relevance_level | direct_ai：活动主题涉及 AI 技术；ai_applicable：跨学科实践或允许 AI 作为工具；unrelated：明显不匹配；uncertain：不足以判断 |
 | eligibility_status | eligible：明示覆盖普通本科生；ineligible：明确教师、仅研究生或其他院校专属；uncertain：资格缺失或有学院/专业/年级/推荐限制，不能推断所有本科生符合 |
 | ai_use_policy | explicitly_allowed / partially_allowed / explicitly_prohibited / unspecified；名称可能适合 AI 不等于规则允许 |
-| opportunity_status | open：明确最终截止仍未到；upcoming：明确未来报名开始；closed：最终截止已过或明示报名结束；unknown：其余，包括仅知道活动日期 |
+| opportunity_status | open：明确最终截止仍未到且没有尚未到来的报名开始时间；upcoming：明确未来报名开始，即使已知最终截止也不能标成 open；closed：最终截止已过或明示报名结束；unknown：其余，包括仅知道活动日期 |
 | candidate_decision | retain：规则认为可保留；uncertain：信息不足但保留候选；exclude：结果新闻、明确行政/资格不符、明确禁 AI 且未识别 AI 学习目标，或已确定报名结束 |
 | event_name / organizer / target_audience | 名称目前采用标题候选，不保证正式全称；主办方只取原文明确标注；受众保留限制，发布学院不是主办方或资格证明 |
 | registration_deadline / internal_deadline | 主办方最终截止与校内报名/推荐截止，不能互相替代 |

@@ -47,6 +47,18 @@ def test_same_input_hits_cache_and_time_state_is_refreshed(store):
     assert store.db.execute('SELECT count(*) FROM notice_analyses').fetchone()[0]==1
 
 
+def test_cached_registration_window_transitions_without_reanalysis(store):
+    notice_id = seed(store, content='参赛对象：我校本科生。报名开始：2026年11月1日。报名截止：2026年12月1日。')
+    repo = AnalysisRepository(store)
+    first, cached = analyze_one(repo, notice_id, reference_time=ASOF)
+    assert not cached and first.opportunity_status == 'upcoming'
+    for point, status in [('2026-11-01', 'open'), ('2026-12-02', 'closed')]:
+        result, cached = analyze_one(repo, notice_id, reference_time=reference_datetime(point))
+        assert cached and result.opportunity_status == status
+        assert result.analyzed_at == first.analyzed_at
+    assert store.db.execute('SELECT count(*) FROM notice_analyses').fetchone()[0] == 1
+
+
 def test_body_title_and_attachment_changes_invalidate_cache(store):
     notice_id=seed(store);repo=AnalysisRepository(store)
     initial,_=analyze_one(repo,notice_id,reference_time=ASOF)

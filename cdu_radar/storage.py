@@ -116,7 +116,13 @@ class Store:
     def save_notice(self, source_id: str, url: str, article: Article, seen_at: str | None = None, *, discovery_published_at=None) -> str:
         now = seen_at or utc_now()
         digest = hashlib.sha256(article.content.encode("utf-8")).hexdigest()
-        links = sorted({(kind,link.name,link.url) for kind,items in [("body",article.links),("attachment",article.attachments)] for link in items})
+        names_by_url = {}
+        for kind, items in [("body", article.links), ("attachment", article.attachments)]:
+            for link in items:
+                names_by_url.setdefault((kind, link.url), set()).add(link.name)
+        # Match the table key; select a stable nonempty caption regardless of DOM order.
+        links = sorted((kind, max(names, key=lambda name: (len(name.strip()), name)), url)
+                       for (kind, url), names in names_by_url.items())
         with self.db:
             old = self.db.execute("SELECT * FROM notices WHERE canonical_url=?", (url,)).fetchone()
             if old is None:

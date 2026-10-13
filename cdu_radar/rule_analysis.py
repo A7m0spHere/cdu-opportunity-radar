@@ -42,16 +42,18 @@ def deadline_moment(value):
 
 def refresh_time(result,reference_time):
     now=reference_datetime(reference_time)
+    start=None
+    if result.registration_start_date:
+        start=datetime.fromisoformat(result.registration_start_date)
+        if start.tzinfo is None:start=start.replace(tzinfo=SHANGHAI)
     status="unknown"
     if result.status_basis=="explicit_closed":status="closed"
     elif result.registration_deadline:
         status="closed" if deadline_moment(result.registration_deadline)<now else "open"
         # A passed internal route with a later external deadline is not universally open.
         if status=="open" and result.internal_deadline and deadline_moment(result.internal_deadline)<now:status="unknown"
-    elif result.registration_start_date:
-        start=datetime.fromisoformat(result.registration_start_date)
-        if start.tzinfo is None:start=start.replace(tzinfo=SHANGHAI)
-        if start>now:status="upcoming"
+        elif status=="open" and start and start>now:status="upcoming"
+    elif start and start>now:status="upcoming"
     decision="exclude" if status=="closed" else result.base_decision
     return replace(result,opportunity_status=status,candidate_decision=decision,reference_time=now.isoformat(),
                    needs_manual_review=result.needs_manual_review or (status=="unknown" and result.base_decision!="exclude"))

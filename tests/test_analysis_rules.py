@@ -88,6 +88,21 @@ def test_future_registration_start_and_event_range():
     assert refresh_time(result,reference_datetime('2026-10-20')).opportunity_status=='unknown'
 
 
+@pytest.mark.parametrize('point,status', [
+    ('2026-10-13', 'upcoming'),
+    ('2026-11-01T08:59:59+08:00', 'upcoming'),
+    ('2026-11-01T09:00:00+08:00', 'open'),
+    ('2026-11-15', 'open'),
+    ('2026-12-01T18:00:00+08:00', 'open'),
+    ('2026-12-01T18:00:01+08:00', 'closed'),
+])
+def test_registration_window_respects_start_and_deadline(point, status):
+    result = analyze('AI应用大赛报名', '参赛对象：我校本科生。报名开始：2026年11月1日 09:00。报名截止：2026年12月1日 18:00。')
+    refreshed = refresh_time(result, reference_datetime(point))
+    assert refreshed.opportunity_status == status
+    assert refreshed.candidate_decision == ('exclude' if status == 'closed' else 'retain')
+
+
 def test_invalid_calendar_date_kept_unknown():
     result=analyze('AI大赛','报名截止：2026年2月30日。')
     assert result.registration_deadline is None

@@ -1,10 +1,11 @@
 from dataclasses import replace
 
 import httpx
+import pytest
 
 from cdu_radar.collect import collect
 from cdu_radar.http import Fetcher
-from cdu_radar.models import Article
+from cdu_radar.models import Article, ArticleLink
 
 
 def transport_for(sample, *, fail_computer=False, article_fail=False):
@@ -91,3 +92,36 @@ def test_date_conflict_is_not_silently_stored(store, sources, sample):
         results = collect(store, fetcher, [s for s in sources if s.id == "computer"], limit=1)
     assert "Publication date conflict" in results[0]["error"]
     assert store.feed_rows(10) == []
+
+
+@pytest.mark.parametrize('kind', ['links', 'attachments'])
+def test_same_url_with_different_names_is_stable_on_recollection(store, kind):
+    url = 'https://computer.cdu.edu.cn/info/1/1.htm'
+    target = 'https://computer.cdu.edu.cn/rules.pdf'
+    aliases = (ArticleLink('', target), ArticleLink('规则', target), ArticleLink('完整报名规则', target))
+    article = Article('合成通知', '2026-10-13', '这是用于验证重复链接保存的合成通知正文。', **{kind: aliases})
+    assert store.save_notice('computer', url, article) == 'inserted'
+    row = dict(store.feed_rows(1)[0])
+    saved = store.links(row['id'], 'body' if kind == 'links' else 'attachment')
+    assert [tuple(link) for link in saved] == [('完整报名规则', target)]
+    assert store.save_notice('computer', url, replace(article, **{kind: tuple(reversed(aliases))})) == 'unchanged'
+    assert store.feed_rows(1)[0]['updated_at'] == row['updated_at']
+
+
+def test_duplicate_article_links_do_not_interrupt_later_sources(store, sources, sample):
+    def handler(request):
+        if request.url.path == '/robots.txt':
+            return httpx.Response(404)
+        kind = 'computer' if request.url.host == 'computer.cdu.edu.cn' else 'business'
+        body = sample(kind + ('_article.html' if '/info/' in request.url.path else '_list.html'))
+        if kind == 'computer' and '/info/' in request.url.path:
+            anchors = '<a href="/signup.htm">报名入口</a><a href="/signup.htm">点击报名入口</a>'.encode()
+            body = body.replace(b'<div id="vsb_content_2">', b'<div id="vsb_content_2">' + anchors)
+        return httpx.Response(200, content=body, headers={'content-type': 'text/html'})
+
+    with Fetcher(transport=httpx.MockTransport(handler), interval=0) as fetcher:
+        results = collect(store, fetcher, sorted(sources, key=lambda s: s.id != 'computer'), limit=1)
+    assert [r['source'] for r in results] == ['computer', 'business']
+    assert all(r['inserted'] == 1 and r['failed'] == 0 for r in results)
+    computer = store.db.execute("SELECT id FROM notices WHERE source_id='computer'").fetchone()
+    assert [tuple(link) for link in store.links(computer['id'])] == [('点击报名入口', 'https://computer.cdu.edu.cn/signup.htm')]

@@ -1,5 +1,59 @@
 # 本机验证记录
 
+## M2-A 验证（2026-10-13，Asia/Shanghai）
+
+开始时实际分支 `m1-source-quality`、提交 `14a55e2`、工作区干净；100 项 M1 测试通过。机器配置实际为 42 个单位、152 个栏目、9 个完整采集验证栏目；M1 数据库有 36 篇通知、schema_version=1，完整性检查为 ok。与用户提供的状态一致；M1 后来已按用户指令推送，这不改变当时开发阶段“未推送”的历史记录。
+
+本轮从 M1 创建 `m2a-rule-evaluation` 分支，使用 SQLite backup 保留 `data/m1-before-m2a.sqlite3` 并生成独立 `data/m2a.sqlite3`。原 M1 库没有覆盖或升级，没有网络采集、真实 LLM 请求、API 密钥读取、QQ/AstrBot 推送或正式 Feed 发布。
+
+### 已实现与数据模型
+
+- dataclass 校验 AnalysisInput、NoticeAnalysis、Evidence、InputLink、ManualLabel，枚举/布尔/日期/时区/引用明确；新增可配置 rules.json，不引入模型 SDK 或新运行依赖。
+- 独立 notice_analyses、manual_labels、analysis_reviews，按需 schema_version=2。修复 Store 原先无条件重设 version=1 的问题，重开 v2 不降级，M0/M1 迁移测试不退化。
+- 输入同时保存发现栏目和实际原文发布单位；缓存考虑标题、正文、来源、发布日期、链接、附件与脱敏版本。实现/规则配置、模型名或输入版本改变时不能误用旧分析；相同内容只重新计算时间状态。
+- analyze、label export/import、evaluate、review list/set CLI；标签导入事务化、版本核验、重复导入幂等和工作表覆盖保护。人类标签不等于审批；自动输出和缓存不能伪造人工批准，人工批准/拒绝历史不被重新分析覆盖。
+- 未来模型接口仅是协议和校验：新输出/缓存核验身份、事实引用、日期用途和模型元数据。不能把出版日期、校内截止或举办日期换成最终报名截止；不合法输出保留原通知并转待审核，不存异常文本中的敏感信息。
+
+### 36 篇真实通知的规则预测
+
+固定参考点为 **2026-10-13 00:00:00 +08:00**，规则版本 `rules-v3:921e47e2bcb4`。以下仅为程序预测，没有人工真值：
+
+| 类型 | 数量 |
+|---|---:|
+| competition | 20 |
+| news | 8 |
+| administrative | 6 |
+| other_activity | 1 |
+| unknown | 1 |
+
+相关性：direct_ai 13、ai_applicable 13、uncertain 3、unrelated 7。候选决定：retain 2、uncertain 17、exclude 17；预筛保留共 19 条，不等于 19 条已审核可推送机会。机会状态 unknown 33、closed 3；缺年份、时间范围和多赛道问题保持不确定，没有用旧发布日期或活动举办日期补出报名截止。22 条标记需要进一步核实，全部 review_status=pending，0 条人工批准/拒绝。
+
+第一次按最终版本分析 36 条，失败 0；重复运行 cache_hits=36、analyzed=0。代码或配置变动的开发旧版本保留历史，不计入这次 36 条的分类统计。分析 JSON 为 `data/m2a-analysis.json`。
+
+### 标注与评测证据
+
+`data/m2a-labels.csv`：36 行，UTF-8 BOM；有脱敏短摘要、官方原文 URL、附件数量、发现/发布来源及独立 predicted_* 列。全部行 label_status=unlabeled，人工列为空；**没有用规则填充人工真值**。工作表记录人工参考日期/具体时点以及预测时点，评测支持固定 as-of 或逐标签时点，避免截止前后的时间差被误报为算法错误。字段说明在 LABELING.md。
+
+实际执行未标注清单导入：imported=0、unchanged=0、unlabeled_skipped=36。实际 evaluate：valid_labels=0、human_labels=0、synthetic_labels=0；Precision/Recall/F1/未确定比例为 null，混淆矩阵全 0，error_samples 为空，明确输出“没有有效人工标签，无法评估真实效果”，production_validated=false。这不表示没有误报/漏报。
+
+导入已标注、修正/重复导入、旧快照拒绝、后续错误行全事务回滚及错例输出均由离线临时数据库测试覆盖。模拟和合成标签不进入这 36 条真实记录，默认评测排除 synthetic；显式合成评测测试验证 TP=0/FP=2/FN=1/TN=0 的数学结果及资格错误列表，**不是实际筛选性能**。
+
+### 数据兼容及测试
+
+原库与副本逐表对比 notices、notice_sources、notice_links，所有行和原有字段完全一致。SQLite 完整性及外键检查通过。`data/m2a-raw-feed.xml` 仍有 36 个唯一 GUID，与 M1 Feed 集合一致，feedparser 正常识别 RSS 2.0。没有按规则过滤或自动批准 Feed。
+
+最终 `python -m pytest -q`：**159 passed in 9.24s**，包括全部 100 项旧测试和 59 项新增测试/参数场景。新增涵盖直接 AI、允许 AI 的跨专业比赛、禁 AI 政策、获奖新闻、教师/研究生/学院资格、缺资格/正文、附件信息不完整、无年份/暂定/多赛道/校内校外/精确时分日期、多个报名入口、恶意指令、类型/规则配置错误、缓存/输入更新/模型名变更、人工审批保护、缓存伪审批、标签真假来源/事务/旧版/空样本、时间口径、RSS 和 v2 重开。常规测试继续禁止 socket 联网。
+
+开发中修正了几项真实规则缺陷：不应因标题“拟推荐公示”而把标题整段脱敏；AI 禁用条款不应当作 AI 主题；资格“仅限某学院”不应误当 AI 部分允许；“仅限本科生，教师可指导”不能跨句匹配教师专属。修复保留原要求并加回归测试，没有降低测试标准。另修正 Windows 测试读 JSON 时显式 UTF-8，产物本来就是 UTF-8。
+
+`pip check` 无依赖冲突；wheel 构建通过，包含 rules.json、分析模块及 42 个单位资源。从 wheel 导入 RuleAnalyzer 并加载配置通过，分析器版本与源码一致；未把此检查等同 Linux 部署或真实模型验收。原始数据库、CSV、分析与评测 JSON、Feed 都在 data/，被 Git 忽略；测试文本明确为合成，不复制实际学生名单、联系人、凭据到仓库。
+
+### 局限与下一轮
+
+现在没有人工标注的真实 FP/FN 证据，不能报告生产筛选效果。规则不能完整理解赛道、复杂否定或历史引用；有的活动虽可能报名但只在附件/日期范围写时间，当前保持 unknown。缺失信息不等于无限制或允许 AI。基础脱敏不能保证识别所有人名，未来外发前还需人工检查。
+
+请先按 LABELING.md 完成人工标注并检查错例，再补足 100—200 条具有代表性的真实样本。真实 LLM 接入另行明确服务、模型/提示版本、固定 Schema、输入脱敏及长度、成本限制、超时失败回退和禁工具权限。M2-A 本地提交可回退，本轮未推送。
+
 ## M1 验证（2026-10-13，Asia/Shanghai）
 
 基线 `1e209b4`、main 工作区干净；修改前全部 49 项 M0 测试通过。分支 `m1-source-quality`，保留 main 的 M0 代码。没有重新初始化项目，也没有生产部署或推送 GitHub。

@@ -70,7 +70,8 @@ class Store:
             self.db.execute("""CREATE TABLE IF NOT EXISTS notice_links (
                 notice_id INTEGER NOT NULL REFERENCES notices(id), kind TEXT NOT NULL CHECK(kind IN ('body','attachment')),
                 name TEXT NOT NULL, url TEXT NOT NULL, PRIMARY KEY(notice_id,kind,url))""")
-            self.db.execute("PRAGMA user_version = 1")
+            current_version=self.db.execute("PRAGMA user_version").fetchone()[0]
+            self.db.execute(f"PRAGMA user_version = {max(1,current_version)}")
 
     def close(self):
         self.db.close()

@@ -102,4 +102,4 @@ def test_only_official_urls(url):
 
 def test_unknown_template_is_not_guessed():
     with pytest.raises(ParseError, match="No verified"):
-        article_adapter("https://cxcyxy.cdu.edu.cn/info/1/1.htm")
+        article_adapter("https://yj.cdu.edu.cn/info/1/1.htm")

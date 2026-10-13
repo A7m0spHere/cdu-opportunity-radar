@@ -26,7 +26,7 @@ def build_rss(store, *, limit: int = 30) -> bytes:
     def tag(parent, name, text, **attrs):
         ET.SubElement(parent, name, attrs).text = xml_text(text)
 
-    tag(channel, "title", "成都大学原始通知 · M0 技术验证")
+    tag(channel, "title", "成都大学原始通知 · 技术验证")
     tag(channel, "link", "https://www.cdu.edu.cn/")
     tag(channel, "description", "未经比赛筛选的本地技术验证 Feed，可能包含新闻和公示。")
     tag(channel, "language", "zh-cn")
@@ -47,8 +47,10 @@ def build_rss(store, *, limit: int = 30) -> bytes:
         tag(item, "pubDate", format_datetime(published))
         origins = store.origins(row["id"])
         origin_note = "；".join(f"{s['college']} / {s['column_name']}" for s in origins)
+        content_unit = store.db.execute("SELECT name FROM units WHERE id=?",(row["content_source_id"],)).fetchone()
+        content_note = content_unit[0] if content_unit else row["content_domain"] or "待核实"
         text = (f"来源栏目学院：{origin_note}\n官方原文：{row['canonical_url']}\n{date_note}\n"
-                f"首次发现（UTC）：{row['discovered_at']}\n\n{row['content'][:400]}")
+                f"原文发布单位：{content_note}\n首次发现（UTC）：{row['discovered_at']}\n\n{row['content'][:400]}")
         tag(item, "description", "<p>" + html.escape(xml_text(text)).replace("\n", "<br/>") + "</p>")
     ET.indent(root, space="  ")
     return ET.tostring(root, encoding="utf-8", xml_declaration=True)

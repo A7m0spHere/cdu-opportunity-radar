@@ -1,0 +1,92 @@
+[
+  {
+    "file": "innovation_list.html",
+    "official_url": "https://cxcyxy.cdu.edu.cn/jyjx/xkjs.htm",
+    "original_sha256": "a19dcf6eef0e9d925c7a78483522fa15ee41c81231bf1134ac5ba5e4437074e4",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "innovation_article.html",
+    "official_url": "https://cxcyxy.cdu.edu.cn/info/1019/4390.htm",
+    "original_sha256": "3ad04447ec286ff080e138aa55fe6c9e020e859985c83eb5096bdc6986e609c1",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "art_list.html",
+    "official_url": "https://msys.cdu.edu.cn/xsgz/cxcy.htm",
+    "original_sha256": "13107dadb3269a84d56f93b79cf87e03457b05f30401e56b717dadb992a6db50",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "art_article.html",
+    "official_url": "https://msys.cdu.edu.cn/info/1173/21018.htm",
+    "original_sha256": "ac41f7d93d63e80a157c5d11c0aba0890608c09a4f4a08d31996167d4c1d4c52",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "film_list.html",
+    "official_url": "https://ftva.cdu.edu.cn/bkjy/tzgg.htm",
+    "original_sha256": "9b96009322fd7b71db4cfa4605afd9be99f2fe9caae398c041c84435c3e4c8a7",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "film_article.html",
+    "official_url": "https://ftva.cdu.edu.cn/info/1193/5025.htm",
+    "original_sha256": "aea53dfa4ea619471527b5ddb00d663f380c9da59285c16dcb57807b52af0834",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "pharmacy_list.html",
+    "official_url": "https://pharm.cdu.edu.cn/xsyd/cxcy.htm",
+    "original_sha256": "fda87ceedaf760c7f529cf6442745a50b8d3e48d9d6c1df65142b4f31160233b",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "pharmacy_article.html",
+    "official_url": "https://pharm.cdu.edu.cn/info/1057/3450.htm",
+    "original_sha256": "fe77eaa327fc613562f016e4e3cbaafed2d176f5a283b1e5c1cadfcd26814aa4",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "electronics_list.html",
+    "official_url": "https://ele.cdu.edu.cn/index/cxcy.htm",
+    "original_sha256": "9177c01f93e9ce3fd3325f8fc2866cee80bd351ef54297696d0af74cddb68f27",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "electronics_article.html",
+    "official_url": "https://ele.cdu.edu.cn/info/1062/11291.htm",
+    "original_sha256": "b40946dac472db64949405a34baa396daec28d18ae594a3810b80af76783a311",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "construction_list.html",
+    "official_url": "https://jztm.cdu.edu.cn/zsjy/cxcy1.htm",
+    "original_sha256": "2e510346a385fc40f8a1cf15cf65281eda318f5d74bf895be597ab1fbb58e254",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "construction_article.html",
+    "official_url": "https://jztm.cdu.edu.cn/info/1082/10392.htm",
+    "original_sha256": "2e987823ce9f5ac72736c1a5c4b1a2b5b679bd73000efb5951a04bd06dd0aac2",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "education_list.html",
+    "official_url": "https://sfxy.cdu.edu.cn/txgz/tzgg.htm",
+    "original_sha256": "ace6b302818246fcfb46803cce26b5278efefd79706598ce09ab8eeeb48e433c",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "education_article.html",
+    "official_url": "https://sfxy.cdu.edu.cn/info/1030/14064.htm",
+    "original_sha256": "bb8e8de9b9bbc2d7da6132b090d8997b4969885dfad7dddd4e0f4162e798a2d7",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  },
+  {
+    "file": "teaching_article.html",
+    "official_url": "https://jw.cdu.edu.cn/info/1043/12424.htm",
+    "original_sha256": "90a9657689a4e3a81297db3e4a727578e02b7350db3e425097d7f6a91cc11ea0",
+    "note": "真实 DOM 的裁剪和脱敏样本；移除图片、名单、联系方式、作者/审稿信息，正文仅短段落。"
+  }
+]

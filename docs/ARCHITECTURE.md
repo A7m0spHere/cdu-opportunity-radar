@@ -1,4 +1,26 @@
-# M0 系统结构
+# 系统结构
+
+## M1 增量变化
+
+保留 M0 的 CLI → HTTP → Adapter → SQLite → RSS 流程。单位和栏目分开登记：`units.json` 记录官网目录层级、共享域名、中心/平台/部门，`sources.json` 仍由 `Source` 加载，一个单位可以有多个栏目；M0 的来源 ID 不变。发现/访问/文章链接/模板实现/完整采集验证分别记录，不把这几种状态合并。
+
+`Fetcher` 默认仍使用系统 DNS 和环境代理。`--resolve HOST=IP` 是显式可选模式，要求 `--no-env-proxy`；仅接受配置中的官方域名及全局可路由 IP，通过 HTTPX transport 保持原始 Host 和 TLS SNI，使用默认证书验证。它不改变 URL/GUID、不修改操作系统 DNS、不降低 TLS 版本或绕过登录。保留默认网络方式，故障来源下次运行重新检查 robots 和连接。实际连接还可能经过本机透明网络代理，关闭环境代理不等于关闭该网络层。
+
+失败状态在 M0 `failed` 的基础上附加 `error_category`、`error_scope`、`retryable`：DNS、TLS 证书、TLS 握手、代理和连接属于环境原因；超时、协议或解码属于本次请求；HTML 结构属于解析器；robots/401/403 属于访问策略；410 表示请求端点移除。不能把单次连接失败等同整个网站永久不可用。请求过程用流式读取限制解压后的大小，gzip 内容只解压一次。
+
+正文跟踪只允许显式登记的官方域名和 `/info/<栏目>/<文章>.htm` 路径；未知域名/正文模板在请求前拒绝，重定向目标再次检查。分页仅沿页面上实际“下页/下一页”链接、原始栏目路径下的数字 `.htm` 页面，受 `--max-pages` 与每来源 `--limit` 限制；对循环页去重，不根据猜测生成分页 URL。
+
+共享域名（例如基础医学院与护理学院）不凭首个匹配项猜测发布学院；数据库仅在域名对应唯一单位时自动回填，采集时对未消除的单位歧义明确失败。后续接入这类网站需要先核实原文中的发布单位元数据。
+
+SQLite 从 M0 追加升级到 `user_version=1`，迁移在事务中执行，可重复打开，不重建 notices。新增 `units` 和 `notice_links`（body/attachment）；notices 新增 `content_source_id`、`content_domain`，notice_sources 新增发现栏目的日期。`notices.source_id` 保持 M0 的最初发现栏目，`notice_sources` 记录所有发现栏目，`content_source_id` 指向实际发布单位。M0 的关联按原文域名回填，ID、URL、首次发现时间及正文内容不改变。
+
+转载栏目日期与原文发布日期可以不同：跨学院链接以原文详情日期为准，同时在关联表保留栏目日期；同站列表与正文日期冲突仍明确失败以提示检查。同一最终 URL 继续受 UNIQUE 约束；正文、标题、日期或链接/附件变化更新已有记录，RSS GUID 始终使用原 canonical_url。附件只记录名称与 URL，不跟踪下载，不解析附件正文；外部正文链接只记录，不能成为采集入口。
+
+升级使用示例：先用 SQLite `backup()` 生成 `data/m0-backup.sqlite3`，再备份到 `data/m1.sqlite3` 并用 M1 打开。原 `data/radar.sqlite3` 本轮保持为 M0 格式；M0 程序不保证能够直接打开升级后的 M1 数据库，恢复 M0 应使用原库/备份，不能删除或回写覆盖数据。
+
+`scripts/diagnose_source.py` 提供脱敏的本机/公共 DNS 诊断；`scripts/discover_sources.py` 和 `scripts/check_candidates.py` 是低频、有界、可人工审查的官方目录发现工具，不是搜索引擎爬虫。它们把证据写入忽略的 data/artifacts，不能直接把访问成功标成正式采集通过。`scripts/validate_local.py` 以只读数据库检查完整性、正文哈希、M0 数据保留和 RSS GUID。
+
+## M0 基线结构（历史说明）
 
 ```text
 CLI → 来源清单 → Fetcher → 栏目/文章 Adapter → Store (SQLite)

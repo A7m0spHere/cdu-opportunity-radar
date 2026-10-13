@@ -1,0 +1,30 @@
+[
+  {
+    "file": "computer_list.html",
+    "official_url": "https://computer.cdu.edu.cn/cxcy/xkjs.htm",
+    "captured_at": "2026-10-13T11:34:35+00:00",
+    "original_sha256": "46a18b7d7dde5e4f31daa655118d2eff783ca3b2daa2d086fc45304c726c8459",
+    "note": "裁剪的真实 DOM；列表前三条，正文仅短段落；不保留图片、附件、联系人或学生名单。"
+  },
+  {
+    "file": "business_list.html",
+    "official_url": "https://bs.cdu.edu.cn/xsgz2/tzgg.htm",
+    "captured_at": "2026-10-13T11:34:35+00:00",
+    "original_sha256": "96e4fe3c1987a29934ed89c5ded21767529e56004b8f20a0d4058624cd1d1ca5",
+    "note": "裁剪的真实 DOM；列表前三条，正文仅短段落；不保留图片、附件、联系人或学生名单。"
+  },
+  {
+    "file": "computer_article.html",
+    "official_url": "https://computer.cdu.edu.cn/info/1036/12337.htm",
+    "captured_at": "2026-10-13T11:34:35+00:00",
+    "original_sha256": "254470caefb1dd4d500c469602f7749abbefe7a2976ecfb6073beae0251cf0e4",
+    "note": "裁剪的真实 DOM；列表前三条，正文仅短段落；不保留图片、附件、联系人或学生名单。"
+  },
+  {
+    "file": "business_article.html",
+    "official_url": "https://bs.cdu.edu.cn/info/1041/13254.htm",
+    "captured_at": "2026-10-13T11:34:35+00:00",
+    "original_sha256": "215be642501e58fcd4077a40ce3d517296b255e37183281529b8be8241c218e9",
+    "note": "裁剪的真实 DOM；列表前三条，正文仅短段落；不保留图片、附件、联系人或学生名单。"
+  }
+]

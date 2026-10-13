@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cdu-opportunity-radar"
+version = "0.1.0"
+description = "Local CDU official notice collector and RSS validation feed"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["httpx>=0.28,<0.29", "beautifulsoup4>=4.14,<5"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "feedparser>=6,<7"]
+
+[project.scripts]
+cdu-radar = "cdu_radar.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["cdu_radar*"]
+
+[tool.setuptools.package-data]
+cdu_radar = ["sources.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

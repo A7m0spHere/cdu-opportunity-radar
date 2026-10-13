@@ -78,8 +78,8 @@ def test_cli_sources_and_export_no_network(store, tmp_path, capsys):
 
 def test_source_catalog_does_not_invent_unknown_url():
     sources = load_sources()
-    assert len(sources) == 30
+    assert len(sources) >= 30
     chemistry = next(s for s in sources if s.college == "化学化工学院")
     assert chemistry.homepage is None and chemistry.column_url is None
     innovation = next(s for s in sources if s.id == "innovation")
-    assert innovation.adapter is None and innovation.status == "failed"
+    assert innovation.adapter == "innovation" and innovation.parser_supported

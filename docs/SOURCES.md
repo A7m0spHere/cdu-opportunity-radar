@@ -1,58 +1,237 @@
-# 信息源清单
+# M1 信息源清单
 
-清单依据 [成都大学官网院系设置](https://www.cdu.edu.cn/yxsz.htm)，本机于 **2026-10-13** 获取原始 HTML。共 30 个目录条目，包括学院、医学中心、中国-东盟艺术学院下属单位和国际部；不是 30 个均已独立接入的学院。仅核对目录链接，不意味着逐一访问了这些学院网站。
+依据 [官网院系设置](https://www.cdu.edu.cn/yxsz.htm) 与 [组织机构](https://www.cdu.edu.cn/zzjg.htm)，于 2026-10-13 复核。机器配置为 `cdu_radar/units.json`（单位及关系）和 `cdu_radar/sources.json`（一个栏目一条记录，保留 M0 的单位/来源 ID）。
 
-`verified`：真实栏目和正文已完成本机采集验证；`pending`：目录确认但未接入；`failed`：本机近期访问失败；`unsupported`：已确认暂无法自动采集（本轮未给任何条目使用这一状态）。最后验证时间只表示完整采集成功时间，待接入和失败来源留空；目录核对时间另存于 JSON 的 `directory_checked_at`。
+共 **42 个单位/平台**：学院 21；医学中心 1；下属学院 6；学院平台 1；国际部 1；校级平台 3；校级部门 8；科研平台 1。官网 30 个院系目录条目全部保留，未把医学中心及艺术学院下属单位当作互不相关的独立学院。
 
-以下是 2026-10-13 验证快照；运行后最新状态以 `python -m cdu_radar sources` 的 SQLite 结果为准。可维护配置为 `cdu_radar/sources.json`。
+从官网首页实际观察 160 条候选导航链接，排除 8 条组织架构、管理制度或平台类路径后，登记 **152 个候选栏目**。152 个取得可读栏目 HTML，139 个发现 `/info/` 文章链接，**9 个已经实现并完成真实采集验证**。找到文章链接只是发现证据，不表示已经支持解析。
 
-| 院系/单位 | 官网目录链接 | 已发现栏目 | 类型 | 采集状态 | 最后采集验证（北京时间） |
+栏目类别：创新创业 12；竞赛 2；通知公告 47；学术活动 25；科研与实践 21；学生工作与参与 45。这是候选栏目分类，不是文章机会筛选。
+
+状态解释：已发现 = 官网页上看到原始链接；已验证访问/文章 = 成功取得栏目 HTML/看到文章链接；已实现 = 有经过样本测试的适配器；完整采集验证 = 标题、原文日期、正文及入库通过。`pending` 不等于网站失败，`failed` 另附 error_category/error_reason；运行时数据库另记录 error_scope/retryable。HTTP 410 仅表示特定端点已移除，不据此宣称整个单位网站永久关闭。
+
+部分本机 DNS 返回基准测试保留地址，需显式解析覆盖后访问；配置中的 accessible 是本轮经过记录的网络配置下的访问结果，不代表默认系统 DNS 在所有机器都可用。所有验证保留 TLS 检查、robots 检查和低频策略。
+
+## 已实现与完整采集验证
+
+| ID | 单位 / 栏目 | 模板 | 最后成功（北京时间） |
+|---|---|---|---|
+| jztm | 建筑与土木工程学院 / [创新创业](https://jztm.cdu.edu.cn/zsjy/cxcy1.htm) | construction | 2026-10-13 20:31:26 |
+| ele | 电子信息与电气工程学院 / [创新创业](https://ele.cdu.edu.cn/index/cxcy.htm) | electronics | 2026-10-13 20:31:34 |
+| computer | 计算机学院 / [学科竞赛](https://computer.cdu.edu.cn/cxcy/xkjs.htm) | computer | 2026-10-13 20:31:42 |
+| pharm | 药学院 / [创新创业](https://pharm.cdu.edu.cn/xsyd/cxcy.htm) | pharmacy | 2026-10-13 20:31:50 |
+| business | 商学院 / [通知公告](https://bs.cdu.edu.cn/xsgz2/tzgg.htm) | business | 2026-10-13 20:31:58 |
+| sfxy | 师范学院 / [通知公告](https://sfxy.cdu.edu.cn/txgz/tzgg.htm) | education | 2026-10-13 20:32:06 |
+| msys | 美术与设计学院 / [创新创业](https://msys.cdu.edu.cn/xsgz/cxcy.htm) | art | 2026-10-13 20:32:14 |
+| ftva | 影视与动画学院 / [通知公告](https://ftva.cdu.edu.cn/bkjy/tzgg.htm) | film | 2026-10-13 20:32:24 |
+| innovation | 创新创业学院（技术转移学院） / [学科竞赛](https://cxcyxy.cdu.edu.cn/jyjx/xkjs.htm) | innovation | 2026-10-13 20:35:53 |
+
+影视学院列表转载教务处原文、创新创业学院列表转载美术学院和计算机学院原文，按实际发布单位解析。教务处详情模板已支持，未把该部门列表标记为完整采集通过。
+
+## 单位覆盖与待核验
+
+| 单位 | 类型 / 上级关系 | 官方首页 | 本轮首页结果 | 候选栏目数 |
+|---|---|---|---|---|
+| 机械工程学院 | 学院 | [官网](https://jxgc.cdu.edu.cn/) | 可访问 | 3 |
+| 建筑与土木工程学院 | 学院 | [官网](https://jztm.cdu.edu.cn/) | 可访问 | 7 |
+| 电子信息与电气工程学院 | 学院 | [官网](https://ele.cdu.edu.cn) | 可访问 | 4 |
+| 计算机学院 | 学院 | [官网](https://computer.cdu.edu.cn) | 可访问 | 8 |
+| 药学院 | 学院 | [官网](https://pharm.cdu.edu.cn/) | 可访问 | 5 |
+| 食品与生物工程学院 | 学院 | [官网](https://bio.cdu.edu.cn/) | 可访问 | 2 |
+| 化学化工学院 | 学院 | 待核验（官网链接为 #） | 未通过：official directory provides only # placeholder | 0 |
+| 医学中心 | 医学中心 | [官网](https://yxzx.cdu.edu.cn/) | 可访问 | 2 |
+| 基础医学院 | 下属学院 / 医学中心 | [官网](https://yhxy.cdu.edu.cn/) | 可访问 | 1 |
+| 临床医学院 | 下属学院 / 医学中心 | [官网](https://med.cdu.edu.cn/) | 可访问 | 3 |
+| 护理学院 | 下属学院 / 医学中心 | [官网](https://yhxy.cdu.edu.cn/) | 可访问 | 1 |
+| 应急管理学院 | 学院 | [官网](https://yj.cdu.edu.cn) | 可访问 | 7 |
+| 马克思主义学院 | 学院 | [官网](https://marx.cdu.edu.cn/) | 可访问 | 4 |
+| 文学与新闻传播学院 | 学院 | [官网](https://wenxin.cdu.edu.cn/) | 可访问 | 7 |
+| 旅游与文化产业学院 | 学院 | [官网](https://lvyou.cdu.edu.cn/) | 可访问 | 6 |
+| 商学院 | 学院 | [官网](https://bs.cdu.edu.cn/) | 可访问 | 5 |
+| 法学院 | 学院 | [官网](https://law.cdu.edu.cn) | 可访问 | 6 |
+| 师范学院 | 学院 | [官网](https://sfxy.cdu.edu.cn/) | 可访问 | 5 |
+| 外国语学院 | 学院 | [官网](https://dfl.cdu.edu.cn/) | 可访问 | 2 |
+| 体育学院 | 学院 | [官网](https://tyxy.cdu.edu.cn/) | 可访问 | 7 |
+| 中国-东盟艺术学院 | 学院平台 | [官网](https://ccaa.cdu.edu.cn/) | 可访问 | 1 |
+| 美术与设计学院 | 下属学院 / 中国-东盟艺术学院 | [官网](https://msys.cdu.edu.cn/) | 可访问 | 7 |
+| 影视与动画学院 | 下属学院 / 中国-东盟艺术学院 | [官网](https://ftva.cdu.edu.cn/) | 可访问 | 5 |
+| 音乐与舞蹈学院 | 下属学院 / 中国-东盟艺术学院 | [官网](https://md.cdu.edu.cn/) | 可访问 | 6 |
+| 国际部 | 国际部 / 中国-东盟艺术学院 | [官网](https://idccaa.cdu.edu.cn) | 可访问 | 3 |
+| 张澜学院 | 学院 | [官网](https://zhanglan.cdu.edu.cn/) | 可访问 | 1 |
+| 创新创业学院（技术转移学院） | 学院 | [官网](https://cxcyxy.cdu.edu.cn/) | 可访问 | 4 |
+| 成都大学斯特灵学院 | 学院 | [官网](https://stirling.cdu.edu.cn/) | 可访问 | 3 |
+| 海外教育学院 | 学院 | [官网](https://coe.cdu.edu.cn/) | 可访问 | 4 |
+| 继续教育学院 | 学院 | [官网](https://jxjy2.cdu.edu.cn/) | 可访问 | 4 |
+| 本科招生信息网（官网导航“招生就业”） | 校级平台 | [官网](https://zhaosheng.cdu.edu.cn/) | 可访问 | 1 |
+| 国际合作与交流处（港澳台办公室） | 校级部门 | [官网](https://oice.cdu.edu.cn/) | 可访问 | 4 |
+| 党委学生工作部（学生处） | 校级部门 | [官网](https://xsc.cdu.edu.cn/) | 可访问 | 1 |
+| 团委 | 校级部门 | [官网](https://tuanwei.cdu.edu.cn/) | 可访问 | 5 |
+| 教务处（招生办公室） | 校级部门 | [官网](https://jw.cdu.edu.cn/) | 可访问 | 3 |
+| 研究生处（学科建设办公室、学位办公室） | 校级部门 | [官网](https://yjsc.cdu.edu.cn/) | 可访问 | 1 |
+| 图书馆 | 校级部门 | [官网](https://lib.cdu.edu.cn/) | 可访问 | 2 |
+| 社科处 | 校级部门 | [官网](https://skc.cdu.edu.cn/) | 可访问 | 0 |
+| 科技处（科技成果转化中心、高等研究院） | 校级部门 | [官网](https://kjc.cdu.edu.cn/) | 可访问 | 5 |
+| 高等研究院 | 科研平台 / 科技处 | [官网](https://gdyjy.cdu.edu.cn/) | 可访问 | 2 |
+| 学生事务服务（官网导航） | 校级平台 | [官网](https://xsswzx.cdu.edu.cn/) | 可访问 | 0 |
+| 就业信息（官网导航） | 校级平台 | [官网](https://jy.cdu.edu.cn/) | 可访问 | 5 |
+
+化学化工学院官网目录链接仍为 `#`，未猜测独立网站。基础医学院和护理学院共享官网域名且分别保留单位归属。研究院、学生事务与就业平台只依据实际官方导航登记，不能据此推断它们是独立学院。未实现栏目仍需逐模板适配，静态介绍页面、就业动态页面或正文资源结构不同的栏目尚未标为 supported。
+
+## 全部候选栏目
+
+| 单位 | 栏目 | 类别 | 访问 / 文章 | 已实现 / 完整验证 | 最后检查 UTC |
 |---|---|---|---|---|---|
-| 机械工程学院 | [官网](https://jxgc.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 建筑与土木工程学院 | [官网](https://jztm.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 电子信息与电气工程学院 | [官网](https://ele.cdu.edu.cn) | 待发现 | 待核实 | pending | — |
-| 计算机学院 | [官网](https://computer.cdu.edu.cn) | [学科竞赛](https://computer.cdu.edu.cn/cxcy/xkjs.htm) | 学科竞赛（含竞赛新闻） | verified | 2026-10-13 19:41:40 |
-| 药学院 | [官网](https://pharm.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 食品与生物工程学院 | [官网](https://bio.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 化学化工学院 | 待核实（目录链接为 #） | 待发现 | 待核实 | pending | — |
-| 医学中心 | [官网](https://yxzx.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 基础医学院 | [官网](https://yhxy.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 临床医学院 | [官网](https://med.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 护理学院 | [官网](https://yhxy.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 应急管理学院 | [官网](https://yj.cdu.edu.cn) | 待发现 | 待核实 | pending | — |
-| 马克思主义学院 | [官网](https://marx.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 文学与新闻传播学院 | [官网](https://wenxin.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 旅游与文化产业学院 | [官网](https://lvyou.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 商学院 | [官网](https://bs.cdu.edu.cn/) | [学生工作 / 通知公告](https://bs.cdu.edu.cn/xsgz2/tzgg.htm) | 学生工作通知（未筛选） | verified | 2026-10-13 19:41:50 |
-| 法学院 | [官网](https://law.cdu.edu.cn) | 待发现 | 待核实 | pending | — |
-| 师范学院 | [官网](https://sfxy.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 外国语学院 | [官网](https://dfl.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 体育学院 | [官网](https://tyxy.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 中国-东盟艺术学院 | [官网](https://ccaa.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 美术与设计学院 | [官网](https://msys.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 影视与动画学院 | [官网](https://ftva.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 音乐与舞蹈学院 | [官网](https://md.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 国际部 | [官网](https://idccaa.cdu.edu.cn) | 待发现 | 待核实 | pending | — |
-| 张澜学院 | [官网](https://zhanglan.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 创新创业学院（技术转移学院） | [官网](https://cxcyxy.cdu.edu.cn/) | [学科竞赛](https://cxcyxy.cdu.edu.cn/jyjx/xkjs.htm) | 学科竞赛 | failed | — |
-| 成都大学斯特灵学院 | [官网](https://stirling.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 海外教育学院 | [官网](https://coe.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
-| 继续教育学院 | [官网](https://jxjy2.cdu.edu.cn/) | 待发现 | 待核实 | pending | — |
+| 建筑与土木工程学院 | [创新创业](https://jztm.cdu.edu.cn/zsjy/cxcy1.htm) | 创新创业 | 是 / 是 | 是 / 是 | 2026-10-13T12:15:15.914031+00:00 |
+| 电子信息与电气工程学院 | [创新创业](https://ele.cdu.edu.cn/index/cxcy.htm) | 创新创业 | 是 / 是 | 是 / 是 | 2026-10-13T12:15:29.908892+00:00 |
+| 计算机学院 | [学科竞赛](https://computer.cdu.edu.cn/cxcy/xkjs.htm) | 竞赛 | 是 / 是 | 是 / 是 | 2026-10-13T12:15:47.920918+00:00 |
+| 药学院 | [创新创业](https://pharm.cdu.edu.cn/xsyd/cxcy.htm) | 创新创业 | 是 / 是 | 是 / 是 | 2026-10-13T12:15:59.919007+00:00 |
+| 商学院 | [通知公告](https://bs.cdu.edu.cn/xsgz2/tzgg.htm) | 通知公告 | 是 / 是 | 是 / 是 | 2026-10-13T12:16:53.926723+00:00 |
+| 师范学院 | [通知公告](https://sfxy.cdu.edu.cn/txgz/tzgg.htm) | 通知公告 | 是 / 是 | 是 / 是 | 2026-10-13T12:19:41.926499+00:00 |
+| 美术与设计学院 | [创新创业](https://msys.cdu.edu.cn/xsgz/cxcy.htm) | 创新创业 | 是 / 是 | 是 / 是 | 2026-10-13T12:17:39.912190+00:00 |
+| 影视与动画学院 | [通知公告](https://ftva.cdu.edu.cn/bkjy/tzgg.htm) | 通知公告 | 是 / 是 | 是 / 是 | 2026-10-13T12:17:41.906591+00:00 |
+| 创新创业学院（技术转移学院） | [学科竞赛](https://cxcyxy.cdu.edu.cn/jyjx/xkjs.htm) | 竞赛 | 是 / 是 | 是 / 是 | 2026-10-13T12:20:07.937513+00:00 |
+| 建筑与土木工程学院 | [通知公告](https://jztm.cdu.edu.cn/yjsjy1/tzgg1.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:03.906702+00:00 |
+| 建筑与土木工程学院 | [学术科研](https://jztm.cdu.edu.cn/xsky/kygl1.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:07.895900+00:00 |
+| 建筑与土木工程学院 | [科研动态](https://jztm.cdu.edu.cn/xsky/kydt1.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:09.983735+00:00 |
+| 建筑与土木工程学院 | [学生工作](https://jztm.cdu.edu.cn/xsgz/xgjg1.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:11.884061+00:00 |
+| 建筑与土木工程学院 | [团学工作](https://jztm.cdu.edu.cn/xsgz/txgz1.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:13.895099+00:00 |
+| 建筑与土木工程学院 | [通知公告](https://jztm.cdu.edu.cn/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:17.938391+00:00 |
+| 电子信息与电气工程学院 | [科研动态](https://ele.cdu.edu.cn/kxyj/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:19.912893+00:00 |
+| 电子信息与电气工程学院 | [教学工作](https://ele.cdu.edu.cn/jxgz/jwxx.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:23.908991+00:00 |
+| 电子信息与电气工程学院 | [学生工作](https://ele.cdu.edu.cn/xsgz/xgdt.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:25.889745+00:00 |
+| 计算机学院 | [教学工作](https://computer.cdu.edu.cn/jxgz/jwxx.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:31.919718+00:00 |
+| 计算机学院 | [科研动态](https://computer.cdu.edu.cn/kxyj/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:35.917351+00:00 |
+| 计算机学院 | [学工工作](https://computer.cdu.edu.cn/xggz/xsjy.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:37.920713+00:00 |
+| 计算机学院 | [学工动态](https://computer.cdu.edu.cn/xggz/xgdt.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:39.913334+00:00 |
+| 计算机学院 | [通知公告](https://computer.cdu.edu.cn/yjspy/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:41.940859+00:00 |
+| 计算机学院 | [创新创业](https://computer.cdu.edu.cn/cxcy/xzkcgzs.htm) | 创新创业 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:43.911964+00:00 |
+| 计算机学院 | [创新创业动态](https://computer.cdu.edu.cn/cxcy/cxcydt.htm) | 创新创业 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:45.949362+00:00 |
+| 药学院 | [通知公告](https://pharm.cdu.edu.cn/xydt/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:50.043935+00:00 |
+| 药学院 | [学术活动](https://pharm.cdu.edu.cn/xydt/xshd.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:53.899326+00:00 |
+| 药学院 | [科研动态](https://pharm.cdu.edu.cn/kxyj/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:55.917002+00:00 |
+| 药学院 | [学术交流](https://pharm.cdu.edu.cn/kxyj/xsjl.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:15:57.920954+00:00 |
+| 食品与生物工程学院 | [通知告示](https://bio.cdu.edu.cn/yjsjy/tzgs.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:01.921572+00:00 |
+| 食品与生物工程学院 | [学术交流](https://bio.cdu.edu.cn/gjjl/xsjl.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:05.909549+00:00 |
+| 临床医学院 | [科研动态](https://med.cdu.edu.cn/kxyj1/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:07.905698+00:00 |
+| 临床医学院 | [学生工作](https://med.cdu.edu.cn/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:11.949878+00:00 |
+| 临床医学院 | [学工新闻](https://med.cdu.edu.cn/xsgz/xgxw.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:13.900064+00:00 |
+| 应急管理学院 | [学术科研](https://yj.cdu.edu.cn/xsky.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:15.913320+00:00 |
+| 应急管理学院 | [科研动态](https://yj.cdu.edu.cn/xsky/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:19.904108+00:00 |
+| 应急管理学院 | [学生工作](https://yj.cdu.edu.cn/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:21.897757+00:00 |
+| 应急管理学院 | [学工动态](https://yj.cdu.edu.cn/xsgz/xgdt.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:23.911818+00:00 |
+| 应急管理学院 | [通知公告](https://yj.cdu.edu.cn/index/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:25.907560+00:00 |
+| 应急管理学院 | [学术科研](https://yj.cdu.edu.cn/index/xsky.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:27.928942+00:00 |
+| 应急管理学院 | [学生活动](https://yj.cdu.edu.cn/index/xshd.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:29.913520+00:00 |
+| 旅游与文化产业学院 | [本科教学工作](https://lvyou.cdu.edu.cn/bkjxgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:31.958028+00:00 |
+| 旅游与文化产业学院 | [实践教学](https://lvyou.cdu.edu.cn/bkjxgz/sjjx.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:35.951983+00:00 |
+| 旅游与文化产业学院 | [科研动态](https://lvyou.cdu.edu.cn/kygz/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:37.914858+00:00 |
+| 旅游与文化产业学院 | [学术活动](https://lvyou.cdu.edu.cn/kygz/xshd.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:39.911137+00:00 |
+| 旅游与文化产业学院 | [学生工作](https://lvyou.cdu.edu.cn/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:41.934782+00:00 |
+| 旅游与文化产业学院 | [创新创业](https://lvyou.cdu.edu.cn/xsgz/cxcy.htm) | 创新创业 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:43.944015+00:00 |
+| 商学院 | [实践教学](https://bs.cdu.edu.cn/bkjy1/sjjx.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:45.925945+00:00 |
+| 商学院 | [学生工作](https://bs.cdu.edu.cn/xsgz2.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:49.926524+00:00 |
+| 商学院 | [学工动态](https://bs.cdu.edu.cn/xsgz2/xgdt.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:51.943107+00:00 |
+| 商学院 | [通知公告](https://bs.cdu.edu.cn/dqgz1/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:16:55.942718+00:00 |
+| 法学院 | [教学工作](https://law.cdu.edu.cn/jxgz1/jwdt.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:01.951938+00:00 |
+| 法学院 | [实践教学](https://law.cdu.edu.cn/jxgz1/sjjx.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:03.994384+00:00 |
+| 法学院 | [科研动态](https://law.cdu.edu.cn/kxyj/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:05.965993+00:00 |
+| 法学院 | [学术交流](https://law.cdu.edu.cn/kxyj/xsjl.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:07.911745+00:00 |
+| 法学院 | [学生活动](https://law.cdu.edu.cn/xsgz1/xshd.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:10.029289+00:00 |
+| 法学院 | [创新创业](https://law.cdu.edu.cn/xsgz1/cxcy.htm) | 创新创业 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:11.918871+00:00 |
+| 外国语学院 | [科研动态](https://dfl.cdu.edu.cn/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:13.907833+00:00 |
+| 外国语学院 | [科研动态](https://dfl.cdu.edu.cn/kydt/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:17.901876+00:00 |
+| 中国-东盟艺术学院 | [学术研究](https://ccaa.cdu.edu.cn/xsyj.htm) | 学术活动 | 是 / 否 | 否 / 否 | 2026-10-13T12:17:21.905218+00:00 |
+| 美术与设计学院 | [通知公告](https://msys.cdu.edu.cn/bkjy/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:25.906191+00:00 |
+| 美术与设计学院 | [学术活动](https://msys.cdu.edu.cn/yjsjy/xshd.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:29.931877+00:00 |
+| 美术与设计学院 | [科研动态](https://msys.cdu.edu.cn/xkky/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:31.905657+00:00 |
+| 美术与设计学院 | [学术交流](https://msys.cdu.edu.cn/xkky/xsjl.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:33.913461+00:00 |
+| 美术与设计学院 | [学生工作](https://msys.cdu.edu.cn/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:35.940133+00:00 |
+| 美术与设计学院 | [通知公告](https://msys.cdu.edu.cn/xsgz/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:37.912085+00:00 |
+| 影视与动画学院 | [通知公告](https://ftva.cdu.edu.cn/yjsjy/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:45.931197+00:00 |
+| 影视与动画学院 | [学术活动](https://ftva.cdu.edu.cn/yjsjy/xshd.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:47.921142+00:00 |
+| 影视与动画学院 | [学生工作](https://ftva.cdu.edu.cn/xsgz/xgln.htm) | 学生工作与参与 | 是 / 否 | 否 / 否 | 2026-10-13T12:17:49.906115+00:00 |
+| 影视与动画学院 | [通知公告](https://ftva.cdu.edu.cn/xsgz/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:51.909026+00:00 |
+| 音乐与舞蹈学院 | [教学工作](https://md.cdu.edu.cn/jxgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:53.943992+00:00 |
+| 音乐与舞蹈学院 | [实践教学](https://md.cdu.edu.cn/jxgz/sjjx.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:57.917049+00:00 |
+| 音乐与舞蹈学院 | [学生工作](https://md.cdu.edu.cn/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:17:59.938397+00:00 |
+| 音乐与舞蹈学院 | [通知公告](https://md.cdu.edu.cn/xsgz/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:01.930003+00:00 |
+| 音乐与舞蹈学院 | [创新创业](https://md.cdu.edu.cn/xsgz/cxcy.htm) | 创新创业 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:03.970677+00:00 |
+| 音乐与舞蹈学院 | [学术交流](https://md.cdu.edu.cn/yssj1/xsjl.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:05.926510+00:00 |
+| 国际部 | [通知公告](https://idccaa.cdu.edu.cn/xwdt/tz1.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:07.941510+00:00 |
+| 国际部 | [学生工作](https://idccaa.cdu.edu.cn/index/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:11.904778+00:00 |
+| 国际部 | [学术讲座](https://idccaa.cdu.edu.cn/xwdt/xs.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:13.881508+00:00 |
+| 张澜学院 | [通知公告](https://zhanglan.cdu.edu.cn/index/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:15.936545+00:00 |
+| 成都大学斯特灵学院 | [新闻与通知](https://stirling.cdu.edu.cn/xwytz/xwsd.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:19.879103+00:00 |
+| 成都大学斯特灵学院 | [通知公告](https://stirling.cdu.edu.cn/xwytz/tzgg1.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:23.981714+00:00 |
+| 成都大学斯特灵学院 | [学术管理中心](https://stirling.cdu.edu.cn/xygk/bmjj1/xsglzx1.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:25.907189+00:00 |
+| 海外教育学院 | [新闻公告](https://coe.cdu.edu.cn/xwgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:27.908926+00:00 |
+| 海外教育学院 | [通知公告](https://coe.cdu.edu.cn/xwgg/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:31.898308+00:00 |
+| 海外教育学院 | [教务公告](https://coe.cdu.edu.cn/jxky/jwgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:33.918863+00:00 |
+| 海外教育学院 | [学生工作](https://coe.cdu.edu.cn/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:35.896933+00:00 |
+| 教务处（招生办公室） | [实践教学](https://jw.cdu.edu.cn/glwj/sjjx.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:39.905228+00:00 |
+| 教务处（招生办公室） | [实践教学](https://jw.cdu.edu.cn/bslc/sjjx.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:43.906149+00:00 |
+| 教务处（招生办公室） | [教学工作月报](https://jw.cdu.edu.cn/index/jxgzyb.htm) | 学生工作与参与 | 是 / 否 | 否 / 否 | 2026-10-13T12:18:49.911468+00:00 |
+| 图书馆 | [通知公告](https://lib.cdu.edu.cn/zx1/tzgg1.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:51.890796+00:00 |
+| 图书馆 | [学术讲座](https://lib.cdu.edu.cn/zx1/xsjz.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:55.892717+00:00 |
+| 机械工程学院 | [学术科研](https://jxgc.cdu.edu.cn/kx/xsky.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:18:57.912781+00:00 |
+| 机械工程学院 | [学生工作](https://jxgc.cdu.edu.cn/xs/tzgg.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:00.015301+00:00 |
+| 机械工程学院 | [学工动态](https://jxgc.cdu.edu.cn/xs/xgdt.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:01.897327+00:00 |
+| 医学中心 | [通知公告](https://yxzx.cdu.edu.cn/xsgl/tzgg.htm) | 通知公告 | 是 / 否 | 否 / 否 | 2026-10-13T12:19:03.908016+00:00 |
+| 医学中心 | [学术看板](https://yxzx.cdu.edu.cn/kxyj/xskb.htm) | 学术活动 | 是 / 否 | 否 / 否 | 2026-10-13T12:19:05.894315+00:00 |
+| 基础医学院 | [学生工作](https://yhxy.cdu.edu.cn/xsgz/gzzd.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:07.907859+00:00 |
+| 护理学院 | [学生工作](https://yhxy.cdu.edu.cn/xsgz/gzzd.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:09.904953+00:00 |
+| 马克思主义学院 | [学术科研](https://marx.cdu.edu.cn/xsky/xsdt.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:11.904533+00:00 |
+| 马克思主义学院 | [教学工作](https://marx.cdu.edu.cn/jxgz/sjjx.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:13.893036+00:00 |
+| 马克思主义学院 | [学生工作](https://marx.cdu.edu.cn/index/tzgg.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:15.913451+00:00 |
+| 马克思主义学院 | [创新创业](https://marx.cdu.edu.cn/zsjy/cxcy.htm) | 创新创业 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:17.896371+00:00 |
+| 文学与新闻传播学院 | [教务公告](https://wenxin.cdu.edu.cn/bkjy/jwgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:19.896096+00:00 |
+| 文学与新闻传播学院 | [通知公告](https://wenxin.cdu.edu.cn/yjsjy/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:21.895107+00:00 |
+| 文学与新闻传播学院 | [学术科研](https://wenxin.cdu.edu.cn/xsky.htm) | 学术活动 | 是 / 否 | 否 / 否 | 2026-10-13T12:19:23.887933+00:00 |
+| 文学与新闻传播学院 | [科研动态](https://wenxin.cdu.edu.cn/xsky/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:25.900634+00:00 |
+| 文学与新闻传播学院 | [学生工作](https://wenxin.cdu.edu.cn/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:27.914027+00:00 |
+| 文学与新闻传播学院 | [学工信息](https://wenxin.cdu.edu.cn/xsgz/xgxx.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:29.968426+00:00 |
+| 文学与新闻传播学院 | [创新创业](https://wenxin.cdu.edu.cn/kcjy/cxcy.htm) | 创新创业 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:31.903970+00:00 |
+| 师范学院 | [学术研究](https://sfxy.cdu.edu.cn/xsyj.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:33.899746+00:00 |
+| 师范学院 | [学术动态](https://sfxy.cdu.edu.cn/xsyj/xsdt.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:36.034843+00:00 |
+| 师范学院 | [团学工作](https://sfxy.cdu.edu.cn/txgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:39.920228+00:00 |
+| 师范学院 | [学工动态](https://sfxy.cdu.edu.cn/txgz/xgdt.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:43.920590+00:00 |
+| 体育学院 | [教学工作](https://tyxy.cdu.edu.cn/jxgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:45.925605+00:00 |
+| 体育学院 | [通知公告](https://tyxy.cdu.edu.cn/kxyj/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:48.124715+00:00 |
+| 体育学院 | [科研动态](https://tyxy.cdu.edu.cn/kxyj/kydt.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:50.016009+00:00 |
+| 体育学院 | [学生工作](https://tyxy.cdu.edu.cn/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:54.012067+00:00 |
+| 体育学院 | [通知公告](https://tyxy.cdu.edu.cn/xsgz/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:56.050523+00:00 |
+| 体育学院 | [学工动态](https://tyxy.cdu.edu.cn/xsgz/xgdt.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:19:58.044453+00:00 |
+| 体育学院 | [通知公告](https://tyxy.cdu.edu.cn/jxgz1/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:20:00.085292+00:00 |
+| 创新创业学院（技术转移学院） | [新闻通知](https://cxcyxy.cdu.edu.cn/xwtz.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:20:02.019759+00:00 |
+| 创新创业学院（技术转移学院） | [双创通知](https://cxcyxy.cdu.edu.cn/xwtz/sctz.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:20:03.962208+00:00 |
+| 创新创业学院（技术转移学院） | [技转通知](https://cxcyxy.cdu.edu.cn/xwtz/jztong_zhi.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:20:05.934055+00:00 |
+| 继续教育学院 | [通知公告](https://jxjy2.cdu.edu.cn/gjzk/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:20:09.930003+00:00 |
+| 继续教育学院 | [学生工作](https://jxjy2.cdu.edu.cn/gjzk/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:20:11.913786+00:00 |
+| 继续教育学院 | [学生工作](https://jxjy2.cdu.edu.cn/crjy/xsgz.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:20:13.912203+00:00 |
+| 继续教育学院 | [考试信息公告](https://jxjy2.cdu.edu.cn/shhks/ksxxgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:20:15.940083+00:00 |
+| 科技处（科技成果转化中心、高等研究院） | [申报通知](https://kjc.cdu.edu.cn/xmgl1/sbtz.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:35:21.934917+00:00 |
+| 科技处（科技成果转化中心、高等研究院） | [立项公告](https://kjc.cdu.edu.cn/xmgl1/lxgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:35:25.955371+00:00 |
+| 科技处（科技成果转化中心、高等研究院） | [新闻公告](https://kjc.cdu.edu.cn/cgzh1/xwgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:35:27.927506+00:00 |
+| 科技处（科技成果转化中心、高等研究院） | [新闻公告](https://kjc.cdu.edu.cn/xwgg/xwdt.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:35:29.958491+00:00 |
+| 科技处（科技成果转化中心、高等研究院） | [通知公告](https://kjc.cdu.edu.cn/xwgg/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:35:31.930613+00:00 |
+| 高等研究院 | [学术研究](https://gdyjy.cdu.edu.cn/xsyj.htm) | 学术活动 | 是 / 否 | 否 / 否 | 2026-10-13T12:35:33.934761+00:00 |
+| 高等研究院 | [学术交流](https://gdyjy.cdu.edu.cn/xsyj/xsjl.htm) | 学术活动 | 是 / 否 | 否 / 否 | 2026-10-13T12:35:37.921003+00:00 |
+| 就业信息（官网导航） | [工作通知](https://jy.cdu.edu.cn/Zhaopin/activityList.html?status=0) | 通知公告 | 是 / 否 | 否 / 否 | 2026-10-13T12:35:39.915543+00:00 |
+| 就业信息（官网导航） | [校招公告](https://jy.cdu.edu.cn/Zhaopin/talk.html) | 通知公告 | 是 / 否 | 否 / 否 | 2026-10-13T12:35:43.931632+00:00 |
+| 就业信息（官网导航） | [校招公告](https://jy.cdu.edu.cn/Chuangye/sxlb.html?status=0) | 通知公告 | 是 / 否 | 否 / 否 | 2026-10-13T12:35:45.922593+00:00 |
+| 就业信息（官网导航） | [校招公告](https://jy.cdu.edu.cn/Zhaopin/zhiweiList.html?jobtype=1) | 通知公告 | 是 / 否 | 否 / 否 | 2026-10-13T12:35:47.918522+00:00 |
+| 就业信息（官网导航） | [校招公告](https://jy.cdu.edu.cn/Zhaopin/zhaopinList.html?type=1) | 通知公告 | 是 / 否 | 否 / 否 | 2026-10-13T12:35:49.945527+00:00 |
+| 党委学生工作部（学生处） | [通知公告](https://xsc.cdu.edu.cn/index/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:35:51.917047+00:00 |
+| 团委 | [通知公告](https://tuanwei.cdu.edu.cn/index/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:35:55.929640+00:00 |
+| 团委 | [创新创业](https://tuanwei.cdu.edu.cn/cxcy.htm) | 创新创业 | 是 / 是 | 否 / 否 | 2026-10-13T12:35:59.947736+00:00 |
+| 团委 | [志愿服务](https://tuanwei.cdu.edu.cn/zyfw.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:01.924357+00:00 |
+| 团委 | [社会实践](https://tuanwei.cdu.edu.cn/shsj.htm) | 科研与实践 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:03.925855+00:00 |
+| 团委 | [主题团日](https://tuanwei.cdu.edu.cn/zttr.htm) | 学术活动 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:05.924527+00:00 |
+| 研究生处（学科建设办公室、学位办公室） | [通知公告](https://yjsc.cdu.edu.cn/tzgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:07.926443+00:00 |
+| 本科招生信息网（官网导航“招生就业”） | [招生公告](https://zhaosheng.cdu.edu.cn/sy/zsgg.htm) | 通知公告 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:11.951128+00:00 |
+| 国际合作与交流处（港澳台办公室） | [学生出境](https://oice.cdu.edu.cn/xscj.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:16.012489+00:00 |
+| 国际合作与交流处（港澳台办公室） | [出境学习](https://oice.cdu.edu.cn/xscj/cjxx.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:19.923988+00:00 |
+| 国际合作与交流处（港澳台办公室） | [海外实习](https://oice.cdu.edu.cn/xscj/hwsx.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:21.944572+00:00 |
+| 国际合作与交流处（港澳台办公室） | [学生出境](https://oice.cdu.edu.cn/zlxz/xscj.htm) | 学生工作与参与 | 是 / 是 | 否 / 否 | 2026-10-13T12:36:23.929246+00:00 |
 
-## 本轮重点来源
-
-- **计算机学院**：列表 `.div_list` 包含 `.div_title`、`.date` 和 `/info/1036/*.htm` 链接；正文在 VSB 文章表单及 `vsb_content_2` 中，标题不能取页面顶部学院名称。取得 3 篇正文，重复运行未新增。
-- **创新创业学院（技术转移学院）**：远程网页阅读工具能读到指定学科竞赛栏目，并可见跨学院直链；但本机 HTTPX 和 curl 的 HTTPS 握手失败，内置浏览器为 `ERR_CONNECTION_CLOSED`。HTTP 普通访问也失败，未关闭证书校验或绕过访问控制。CLI robots 请求额外重试 2 次后仍为 `ConnectError`，停采；状态为 `failed`，适配器和最后成功验证时间均为空。**不能声称这两个优先指定来源均已通过。**
-- **商学院**：从已确认的官网首页实际发现“学生工作 / 通知公告”链接，作为不同模板的补充验证来源。`ul.jtfylb > li` 中 `a > p` 为标题、`span` 为日期；正文使用 `vsb_content` 或 `vsb_content_4`。取得 3 篇正文，重复未新增。通知包含奖学金和补贴公示，当前仅用于原始通知技术验证。
-
-两个可访问站点的 robots.txt 均为 HTTP 200 的 HTML 维护页，没有可解析的 User-agent 组；按无匹配规则处理并记录 `robots_no_rules` 警告，仍保持至少 2 秒间隔。后续规则发生变化时，每次运行都会重新检查。
-
-基础医学院和护理学院在官网目录中共享 `https://yhxy.cdu.edu.cn/`，按官网原值记录，未推断为不同网站；化学化工学院没有可用官网链接。其余学院栏目 URL 均未猜测。
-
-## 相关官方接口文档
-
-- [HTTPX 客户端超时](https://www.python-httpx.org/advanced/timeouts/) 与 [MockTransport](https://www.python-httpx.org/advanced/transports/)
-- [Beautiful Soup 文档](https://www.crummy.com/software/BeautifulSoup/bs4/doc/)
-- [Python sqlite3](https://docs.python.org/3.12/library/sqlite3.html) 与 [RobotFileParser](https://docs.python.org/3.12/library/urllib.robotparser.html)
-- [RSS 2.0 规范](https://www.rssboard.org/rss-specification) 与 [RFC 9309](https://www.rfc-editor.org/rfc/rfc9309.html)
-- [pytest tmp_path](https://docs.pytest.org/en/stable/how-to/tmp_path.html)
+栏目来源页、官方域名、错误原因、检查时间及完整状态可在机器 JSON 核对；近期运行状态用 CLI `sources` 查看。初始调查、访问和列表发现的可复核 JSON 保存在本地 `data/m1-discovery.json`，不提交数据文件。

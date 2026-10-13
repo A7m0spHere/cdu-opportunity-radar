@@ -6,9 +6,14 @@ from urllib.parse import urlsplit, urlunsplit
 class RadarError(Exception):
     """Expected collection failure; safe to report and isolate."""
 
+    category = "configuration"
+    scope = "configuration"
+    retryable = False
+
 
 class ParseError(RadarError):
-    pass
+    category = "html_parse"
+    scope = "parser"
 
 
 def utc_now() -> str:
@@ -43,6 +48,17 @@ class Source:
     last_verified_at: str | None
     directory_checked_at: str
     note: str = ""
+    unit_id: str | None = None
+    unit_type: str | None = None
+    official_domain: str | None = None
+    discovered_from: str | None = None
+    last_checked_at: str | None = None
+    accessible: bool | None = None
+    articles_found: bool | None = None
+    parser_supported: bool = False
+    error_category: str | None = None
+    error_reason: str | None = None
+    content_adapter: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,3 +73,12 @@ class Article:
     title: str
     published_at: str | None
     content: str
+    links: tuple = ()
+    attachments: tuple = ()
+    content_source_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ArticleLink:
+    name: str
+    url: str

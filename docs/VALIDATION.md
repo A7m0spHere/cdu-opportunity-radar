@@ -1,4 +1,78 @@
-# M0 本机验证记录
+# 本机验证记录
+
+## M1 验证（2026-10-13，Asia/Shanghai）
+
+基线 `1e209b4`、main 工作区干净；修改前全部 49 项 M0 测试通过。分支 `m1-source-quality`，保留 main 的 M0 代码。没有重新初始化项目，也没有生产部署或推送 GitHub。
+
+### 连接诊断及 M0 问题修复
+
+| 配置/层级 | 创新创业学院实际结果 |
+|---|---|
+| 系统 DNS IPv4 | `198.18.0.11`；TCP/TLS 探测为 ConnectionResetError（WinError 10054） |
+| 系统 DNS IPv6 | `2001:2::2b`；TLS 探测为 SSLEOFError |
+| 环境代理 | HTTP_PROXY/HTTPS_PROXY/ALL_PROXY/NO_PROXY 均未设置；HTTPX ConnectError / TLS EOF |
+| `trust_env=False` / `--no-env-proxy` | 同样 ConnectError / TLS EOF |
+| 强制 IPv4 / IPv6 | 均 ConnectError / TLS EOF，未获得 HTTP 响应 |
+| 公共 DNS（Google DoH，HTTPS 验证开启） | CNAME `fa140.cdu.edu.cn`，A `202.115.80.140` |
+| 公共地址 + 原域名 Host/SNI | TLS 1.3、证书验证通过、HTTP 200；取得列表、本站正文和跨学院原文 |
+
+结论：本机解析/透明网络路径是故障环节，HTTPX 代理开关不是根因；不是网站永久不可用，也不是观察到的证书校验失败。TLS 握手阶段即终止，因此系统路径没有证据表明是重定向或 HTML 解析问题。不能仅依据当前证据认定是哪款本机网络软件导致，也未修改系统网络配置。
+
+`198.18.0.0/15` 在 [IANA](https://www.iana.org/assignments/iana-ipv4-special-registry) 中是不可全球路由的基准测试地址段；系统返回这类地址与公共 DNS 不同，提示透明网络/DNS 代理路径。完整分组结果在本地 `data/m1-network-diagnosis.json`、`data/m1-public-dns.json` 和 `data/m1-final-network.json`。复现工具为 `python -m scripts.diagnose_source --public-dns`，只输出脱敏代理信息。公共地址会变化，覆盖是显式可选参数，不能把此地址当永久配置。
+
+师范学院本机也使用本轮公共 DNS `202.115.80.140` 进行显式解析验证。新增 TLS/DNS/代理/超时/协议/解码/访问策略/解析器分类及 retryable，替代 M0 只保留 ConnectError 类型的粗略说明；同一来源下次运行可以恢复。正文跟踪从“任意 CDU 子域”缩小为明确配置的主机和 VSB 原文路径。
+
+M0 将同站与跨学院的日期差异一律按冲突处理；M1 保留同站冲突检查，允许跨学院转载日期不同。真实案例：影视栏目日期 2026-09-07、教务处原文 2026-09-04；创新创业栏目日期 2026-10-08、美术学院原文 2026-09-30。分别保存，RSS 采用原文日期。新流式请求曾发生 gzip 重复解码，已修复并加回归测试；这属于 M1 开发中发现的问题，没有当作网站故障。
+
+### 全校来源覆盖
+
+官网 30 个院系条目逐一复核，另登记实际组织机构和导航中观察到的 12 个校级部门/平台，合计 42 个单位。41 个主页通过本轮已记录网络配置访问；化学化工学院仍只有 `#` 占位符。完整类型、关系和网址见 `SOURCES.md` 与 `units.json`。
+
+首页共实际发现 160 条候选栏目导航，排除 8 条组织架构/管理制度/平台路径，保留 152 个候选栏目：152 个访问通过，139 个有规范 `/info/` 文章链接，9 个已实现且完整采集验证。13 个未发现这种文章链接的页面可能是介绍页、其他列表路径或动态页面，标为待适配，不能宣称没有任何机会信息。教务处详情适配验证通过，其列表未宣称完整接入。
+
+### 真实采集及分页
+
+| 来源 ID | 官方栏目 | 本轮完整验证 |
+|---|---|---|
+| computer | https://computer.cdu.edu.cn/cxcy/xkjs.htm | 首次处理 2 篇已有文章，重复未新增 |
+| business | https://bs.cdu.edu.cn/xsgz2/tzgg.htm | 首次处理 2 篇已有文章，重复未新增 |
+| innovation | https://cxcyxy.cdu.edu.cn/jyjx/xkjs.htm | 首次新增 2 篇，另验证 2 页/19 篇与跨学院原文 |
+| msys | https://msys.cdu.edu.cn/xsgz/cxcy.htm | 首次新增 2 篇，重复未新增 |
+| ftva | https://ftva.cdu.edu.cn/bkjy/tzgg.htm | 首次新增 2 篇，正确解析教务处原文 |
+| pharm | https://pharm.cdu.edu.cn/xsyd/cxcy.htm | 首次新增 2 篇，重复未新增 |
+| ele | https://ele.cdu.edu.cn/index/cxcy.htm | 首次新增 2 篇，重复未新增 |
+| jztm | https://jztm.cdu.edu.cn/zsjy/cxcy1.htm | 首次新增 2 篇，重复未新增 |
+| sfxy | https://sfxy.cdu.edu.cn/txgz/tzgg.htm | 首次新增 2 篇，重复未新增 |
+
+真实运行三组证据：
+
+- 9 栏目、每来源 2 篇/1 页：新增 14、更新 0、未变 4、失败 0、解析失败 0，共 72.048 秒，数据库由 M0 的 6 篇增至 20 篇。
+- 同范围重复：新增 0、更新 0、未变 18、失败 0、解析失败 0，共 72.063 秒，记录数仍 20。
+- 创新创业学院 `max-pages=2, limit=19`：实际读取首页及页面中真实“下页”指向的第二页；新增 16、更新 1、未变 2、失败 0、解析失败 0，共 46.109 秒。更新的已有数学竞赛通知补充了附件等元数据，原 ID/URL/正文哈希保持；总计 36 篇。
+
+运行 stdout/log 文件保存在本地 `data/m1-live-first.*`、`data/m1-live-repeat.*`、`data/m1-live-pages.*`。无高频或大规模并发抓取，默认至少 2 秒请求间隔，验证没有进行附件下载。
+
+### 数据库、RSS 和离线测试
+
+升级使用 SQLite backup 保留 `data/m0-backup.sqlite3`，复制得到 `data/m1.sqlite3` 后追加迁移到 user_version=1；原 `data/radar.sqlite3` 仍保留 M0 数据。完整性和外键检查均通过。36 篇通知保存 13 条正文链接、27 条附件名称/URL；1 篇原文具有两个发现栏目。原 M0 的 6 篇 ID、URL、首次发现时间和正文哈希逐条与备份一致，6 个旧 GUID 都存在于新 Feed。
+
+`data/m1-feed.xml`：36 个唯一 GUID，ElementTree XML 可解析，feedparser 识别为 rss20 且 bozo=False；摘要注明发现学院和实际发布单位、原文链接及日期语义。没有公开 Feed，没有 AstrBot/QQ 推送。
+
+最终离线 pytest：**100 passed in 5.16s**。保留 49 项 M0 测试的行为检查；两项目录快照断言随功能扩展更新（来源不再仅 30 条、创新创业不再是未知模板），未知模板保护仍验证未支持的应急学院。新增 51 项涵盖七种来源列表/正文、教务处原文与附件、空结果/结构变化、分页边界/循环和数量限制、两类跨学院日期及归并、M0 迁移幂等、GUID 稳定、共享域名归属歧义、流式大小和 gzip、请求分类、Host/SNI 保留、可信域名、公网地址限制、恢复重试及诊断脱敏。测试夹具禁止 socket 联网，不用真实网络凑测试数量。
+
+`pip check`：No broken requirements found。wheel 构建通过，确认包含 CLI、42 个单位和 185 个来源配置记录（152 个栏目加 33 个未选主栏目的单位占位记录）；不等同于 Linux 部署验收。新增 HTML 样本是实际页面的合理裁剪、脱敏内容，出处和未裁剪页面哈希见 `tests/fixtures/m1/manifest.json`；不含联系人、名单或作者姓名。开发中初次样本测试纠正了原文日期假设、较短正文裁剪和 Mock 第二页的相对路径，不降低解析要求。
+
+### 剩余范围与下一步
+
+143 个候选栏目尚未实现完整列表/详情采集；化学化工学院的独立官网待核验。分页目前只支持实际观察的 VSB 数字分页，不覆盖动态 API、其他新闻 URL 或所有历史模板；纯图片/附件正文仍明确失败。附件内容变更、精确文章时间与 HTTP 条件更新未实现；网站结构和公共 DNS 地址仍可能变化。
+
+36 篇本地原始通知可作为 M2 人工标注起点，含报名/选拔、获奖新闻、公示和普通通知，不能直接当作模型已经筛选的机会清单。原始数据可能包含个人信息，应先确定脱敏和发送边界；本轮没有调用模型。M2 待决策已记录到 PLAN.md。
+
+### M1 Git 与数据边界
+
+本轮只在 `m1-source-quality` 上进行本地开发与提交，提交说明沿用 feat/fix 前缀和中文内容；main 与 origin/main 保持 M0 的 `1e209b4`，没有推送 M1。Git 的实际提交记录以本地 log 为准。数据库、Feed、原始整页、诊断结果、虚拟环境与临时构建材料均被忽略；仅把合理裁剪的脱敏样本及官网配置纳入代码。升级前后的本地数据库保留，原始 HTML 在核对/制作样本后清理。
+
+## M0 历史验证记录
 
 验证日期：2026-10-13，Asia/Shanghai。环境：Windows PowerShell、Python 3.12.10、项目独立 `.venv`。
 

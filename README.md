@@ -1,8 +1,8 @@
 # cdu-opportunity-radar
 
-成都大学官方通知采集器。M1 扩展官方来源登记、受控分页和采集质量，继续将通知保存到 SQLite 并生成本地 RSS 2.0 技术验证 Feed。采集、存储、发布独立，不依赖 AstrBot API。
+成都大学官方通知采集器。M1 支持来源登记、受控采集和 SQLite/RSS；M2-A 新增离线规则预筛、人工标注及评测。采集、存储、分析和发布独立，不依赖 AstrBot API。
 
-**当前 Feed 未做比赛筛选**，包括获奖新闻和普通学生工作通知。项目不自动公开 RSS，不配置 QQ 群订阅。AI 分析、报名期限抽取、赛事级转载去重和全学院采集均属于后续阶段。
+**当前 Feed 仍是原始技术验证 Feed**，包括获奖新闻和普通通知；规则预测不会自动改变 Feed 或批准发布。没有真实 LLM、QQ 群订阅或公开发布。复杂日期语义、赛事级转载去重和完整学院采集仍属于后续阶段。
 
 ## 安装
 
@@ -22,6 +22,35 @@ python3 -m venv .venv
 ```
 
 ## 本地运行
+
+### M2-A 离线规则、人工标注与评测
+
+本轮使用独立 `data/m2a.sqlite3`，由 M1 的 36 篇通知备份复制，原 M1 数据库保持不变。新环境先完成采集；已有 M1 数据可用 Python 标准库 SQLite backup 建副本：
+
+```powershell
+.\.venv\Scripts\python.exe -c "import sqlite3; from pathlib import Path; source=sqlite3.connect('file:data/m1.sqlite3?mode=ro',uri=True); Path('data/m2a.sqlite3').open('xb').close(); target=sqlite3.connect('data/m2a.sqlite3'); source.backup(target); target.close(); source.close()"
+```
+
+上述复制命令只用于第一次建立副本，目标文件已存在时会拒绝操作，保留已有分析和标签。
+
+```powershell
+.\.venv\Scripts\python.exe -m cdu_radar analyze --as-of 2026-10-13
+.\.venv\Scripts\python.exe -m cdu_radar label export --as-of 2026-10-13
+# 人工编辑 data/m2a-labels.csv，明确 label_status=human 后导入：
+.\.venv\Scripts\python.exe -m cdu_radar label import --input data/m2a-labels.csv --labeler 本人
+.\.venv\Scripts\python.exe -m cdu_radar evaluate --as-of 2026-10-13
+.\.venv\Scripts\python.exe -m cdu_radar review list --as-of 2026-10-13
+```
+
+新命令默认 `--db data/m2a.sqlite3`，库不存在时报错，不生成伪空样本。`--as-of` 固定北京时间参考点，日期单值代表该日 00:00；省略时用当前北京时间。`--rules 文件` 可修改关键词配置，无需改 Python。
+
+输出：`data/m2a-analysis.json`、`data/m2a-labels.csv`、`data/m2a-evaluation.json`。CSV 有明确独立的 `predicted_*` 和人工字段；新行是未标注状态。导出默认拒绝覆盖已有工作表，需要时用另一 output，或先导入再显式 `--overwrite`。**人工标签不等于审批，程序预测不等于人工真值。**
+
+事实、推断、未知分别保存；只有明确年份和日期用途才进入时间字段。多赛道时间不强制归成一个日期，AI 可适用不等于规则允许，学院来源不等于所有本科生有资格。成功结果缓存同时考虑正文和完整输入；原文变化重新待审，旧人工结论留存。分析失败只保留错误类型并待审核。
+
+当前 36 篇全部导出为未标注，尚无有效人工真值，不能报告真实 Precision/Recall/F1。评测以“保留候选（retain + uncertain）”为正例，输出混淆矩阵、未确定比例和错例；不是推送批准率。完整字段和方法见 [分析契约](docs/ANALYSIS_CONTRACT.md) 与 [人工标注指南](docs/LABELING.md)。
+
+### 原始采集与 RSS（保持兼容）
 
 ```powershell
 .\.venv\Scripts\python.exe -m cdu_radar sources
@@ -52,6 +81,8 @@ DNS 地址可能变化，先运行诊断确认，不要长期依赖快照中的�
 `scripts` 维护工具需要在仓库目录执行；wheel 分发包含主采集 CLI 和机器来源配置。
 
 所有子命令均支持 `--db 路径`。`--limit` 必须大于 0。退出码：0 成功；1 至少一个来源/文章采集失败（其他来源仍继续）；2 参数、文件或数据库错误。失败不会把空正文入库，也不会清除已存通知。来源状态和错误可用 `sources` 命令查询。
+
+analyze 返回 1 表示至少一条分析失败；标签不足的 evaluate 返回 0，同时报告空指标和样本不足。它表示评测流程运行成功，不表示筛选效果通过。
 
 请求默认采用环境代理；本机使用 `--no-env-proxy` 完成直连验证。需要代理时省略此参数。请求保留 TLS 证书验证，不降低 TLS 安全策略。
 

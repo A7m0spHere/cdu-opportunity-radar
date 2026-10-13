@@ -21,7 +21,7 @@ def positive_int(value):
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="CDU M0 local collector and RSS exporter")
+    parser = argparse.ArgumentParser(description="CDU notice collector, local RSS and offline rule evaluation")
     sub = parser.add_subparsers(dest="command", required=True)
     listing = sub.add_parser("sources", help="Show catalog and current SQLite state")
     collection = sub.add_parser("collect", help="Collect bounded official pages, no publishing")
@@ -36,7 +36,36 @@ def main(argv=None) -> int:
                             help="Explicit public DNS answer; requires --no-env-proxy; TLS still verified")
     export.add_argument("--limit", type=positive_int, default=30)
     export.add_argument("--output", type=Path, default=Path("data/feed.xml"))
+    analysis=sub.add_parser("analyze",help="Offline rule baseline; no LLM and no approval")
+    analysis.add_argument("--output",type=Path,default=Path("data/m2a-analysis.json"))
+    label=sub.add_parser("label",help="Export/import explicitly human-labelled CSV")
+    label_actions=label.add_subparsers(dest="label_action",required=True)
+    label_export=label_actions.add_parser("export")
+    label_export.add_argument("--output",type=Path,default=Path("data/m2a-labels.csv"))
+    label_export.add_argument("--overwrite",action="store_true",help="Replace existing worksheet; export imported labels only")
+    label_import=label_actions.add_parser("import")
+    label_import.add_argument("--input",type=Path,required=True)
+    label_import.add_argument("--labeler",required=True)
+    label_import.add_argument("--allow-synthetic",action="store_true")
+    evaluation=sub.add_parser("evaluate",help="Evaluate only explicitly imported labels")
+    evaluation.add_argument("--output",type=Path,default=Path("data/m2a-evaluation.json"))
+    evaluation.add_argument("--include-synthetic",action="store_true")
+    review=sub.add_parser("review",help="Manual review history, independent of predictions")
+    review_actions=review.add_subparsers(dest="review_action",required=True)
+    review_list=review_actions.add_parser("list")
+    review_set=review_actions.add_parser("set")
+    review_set.add_argument("--notice-id",type=positive_int,required=True)
+    review_set.add_argument("--status",choices=["pending","approved","rejected"],required=True)
+    review_set.add_argument("--reason",required=True)
+    review_set.add_argument("--reviewer",required=True)
+    for command in (analysis,label_export,label_import,evaluation,review_list,review_set):
+        command.add_argument("--db",type=Path,default=Path("data/m2a.sqlite3"))
+    for command in (analysis,label_export,evaluation,review_list):
+        command.add_argument("--rules",type=Path)
+        command.add_argument("--as-of",help="YYYY-MM-DD or timestamp with timezone; interpreted in Asia/Shanghai")
     args = parser.parse_args(argv)
+    if args.command in {"analyze","label","evaluate","review"}:
+        return analysis_command(args)
     sources = load_sources()
     selected = []
     if args.command == "collect":
@@ -81,3 +110,46 @@ def main(argv=None) -> int:
     except (RadarError, OSError, sqlite3.Error, ValueError) as exc:
         print(f"{type(exc).__name__}: {exc}", file=sys.stderr)
         return 2
+
+
+def analysis_command(args):
+    from .analysis_store import AnalysisRepository
+    from .analysis_service import analyze_all
+    from .analysis_models import reference_datetime
+    from .rule_analysis import RuleAnalyzer
+    from .labels import atomic_text,export_labels,import_labels
+    from .evaluation import evaluate
+    if not args.db.is_file():
+        print(f"Database does not exist: {args.db}",file=sys.stderr);return 2
+    if getattr(args,"output",None) and args.output.resolve()==args.db.resolve():
+        print("Output must differ from database",file=sys.stderr);return 2
+    if args.command=="label" and args.label_action=="export" and args.output.exists() and not args.overwrite:
+        print("Worksheet exists; choose another output or explicitly use --overwrite",file=sys.stderr);return 2
+    try:
+        now=reference_datetime(getattr(args,"as_of",None))
+        analyzer=RuleAnalyzer(getattr(args,"rules",None))
+        with Store(args.db) as store:
+            repository=AnalysisRepository(store)
+            if args.command=="analyze":
+                rows,summary=analyze_all(repository,analyzer=analyzer,reference_time=now)
+                atomic_text(args.output,json.dumps({"summary":summary,"analyses":[r.to_dict() for r in rows]},ensure_ascii=False,indent=2),encoding="utf-8")
+                print(json.dumps(summary,ensure_ascii=False))
+                return 1 if summary["failed"] else 0
+            if args.command=="label":
+                if args.label_action=="export":
+                    count=export_labels(repository,args.output,analyzer=analyzer,reference_time=now)
+                    print(json.dumps({"output":str(args.output),"rows":count,"new_rows_status":"unlabeled"},ensure_ascii=False))
+                else:print(json.dumps(import_labels(repository,args.input,labeler=args.labeler,allow_synthetic=args.allow_synthetic),ensure_ascii=False))
+            elif args.command=="evaluate":
+                report=evaluate(repository,analyzer=analyzer,reference_time=now if args.as_of else None,include_synthetic=args.include_synthetic)
+                atomic_text(args.output,json.dumps(report,ensure_ascii=False,indent=2),encoding="utf-8")
+                print(json.dumps(report,ensure_ascii=False,indent=2))
+            elif args.review_action=="set":
+                print(json.dumps(repository.review(args.notice_id,args.status,args.reason,args.reviewer),ensure_ascii=False))
+            else:
+                rows,_=analyze_all(repository,analyzer=analyzer,reference_time=now)
+                print(json.dumps([{ "notice_id":r.notice_id,"category":r.category,"decision":r.candidate_decision,
+                    "review_status":r.review_status,"needs_manual_review":r.needs_manual_review} for r in rows],ensure_ascii=False,indent=2))
+        return 0
+    except (OSError,sqlite3.Error,ValueError) as exc:
+        print(f"{type(exc).__name__}: {exc}",file=sys.stderr);return 2

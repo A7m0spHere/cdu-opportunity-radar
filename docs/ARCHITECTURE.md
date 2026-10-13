@@ -1,5 +1,15 @@
 # 系统结构
 
+## M2-A 独立分析与人工评测
+
+保留既有采集和 RSS 模块；新增 `analysis_models` 的类型化输入/分析/标签/证据，`rule_analysis` 可配置规则，`analysis_store` 追加缓存、标签和审核历史，`analysis_service` 控制版本与权限，`labels` 和 `evaluation` 提供人工 CSV 和离线指标。没有模型 SDK、网络调用或发布服务。
+
+只有分析/标注命令按需创建 M2 表并设置 schema version=2，原 M0/M1 表保留。原 Store 不再把更高版本重设为 1；旧采集、RSS 和 v1 数据迁移测试保持可用。原通知、来源关联和附件链接不因分析或标注而更新。
+
+`notice_analyses` 保存固定 Schema 的 JSON，读写均由 NoticeAnalysis 校验；输入哈希包含标题/正文/来源/日期/链接/附件，规则版本含实现与配置指纹。命中缓存仍验证身份、模型名、证据及审批边界，再按当前北京时间重算机会状态。`manual_labels` 和 `analysis_reviews` 是独立追加历史，按 notice_id/input_hash 绑定；自动模块不能审批、不能改写人工历史。完整约定见 ANALYSIS_CONTRACT.md。
+
+CSV 导出提供短脱敏摘要、原文 URL 和独立预测列，人工列默认空。导入先验证全部行与原文版本，在事务中提交；评测默认只用明确人工标签，合成案例必须显式启用并标识。review 是审批记录，不是导入标签的副作用，也不是正式 Feed 发布入口。
+
 ## M1 增量变化
 
 保留 M0 的 CLI → HTTP → Adapter → SQLite → RSS 流程。单位和栏目分开登记：`units.json` 记录官网目录层级、共享域名、中心/平台/部门，`sources.json` 仍由 `Source` 加载，一个单位可以有多个栏目；M0 的来源 ID 不变。发现/访问/文章链接/模板实现/完整采集验证分别记录，不把这几种状态合并。

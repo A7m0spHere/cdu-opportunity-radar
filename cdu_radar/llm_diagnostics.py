@@ -28,7 +28,8 @@ def request_stages(repository, version, notice_ids=None):
     rows = [] if not exists else [dict(r) for r in repository.db.execute("SELECT * FROM llm_requests WHERE analyzer_version=?",(version,))]
     if notice_ids is not None:rows = [r for r in rows if r["notice_id"] in notice_ids]
     diagnostic_exists = repository.db.execute("SELECT 1 FROM sqlite_master WHERE name='llm_request_diagnostics'").fetchone()
-    stages = {key:[] for key in ["request_ok","json_ok","schema_ok","evidence_ok","analysis_ok"]}
+    stages = {key:[] for key in ["request_ok","json_ok","direct_json_ok","schema_ok","evidence_ok","analysis_ok"]}
+    parsing = Counter()
     observable = 0
     for row in rows:
         saved = repository.db.execute("SELECT payload FROM llm_request_diagnostics WHERE request_uid=?",(row["request_uid"],)).fetchone() if diagnostic_exists else None
@@ -41,6 +42,8 @@ def request_stages(repository, version, notice_ids=None):
                           "json_ok":True if category in {None,"schema_validation"} else False if category=="invalid_json" else None,
                           "schema_ok":True if category is None else None, "evidence_ok":True if category is None else None}
         for key in stages:stages[key].append(diagnostic.get(key))
+        method = diagnostic.get("parse_method")
+        parsing[method if method in {"direct_json","normalized_markdown_fence","invalid_json","unsupported_wrapper"} else "unobservable_or_not_reached"] += 1
     metrics = {}
     for key, values in stages.items():
         passed = sum(v is True for v in values); failed = sum(v is False for v in values); unknown = len(values)-passed-failed
@@ -50,7 +53,9 @@ def request_stages(repository, version, notice_ids=None):
             "rate_lower_bound":passed/len(values) if values else None,
             "note":"Sequential stages; unobserved/not reached are not measured failures"}
     return {"scope":"requests within one analyzer version, including retries", "requests":len(rows),
-            "diagnostic_requests":observable, "legacy_unobservable_requests":len(rows)-observable, "stages":metrics}
+            "diagnostic_requests":observable, "legacy_unobservable_requests":len(rows)-observable, "stages":metrics,
+            "json_parsing":{method:parsing[method] for method in ["direct_json","normalized_markdown_fence","invalid_json","unsupported_wrapper","unobservable_or_not_reached"]},
+            "json_note":"json_success includes strict fence normalization; direct_json_success measures native JSON Objects separately"}
 
 
 def diagnose(repository, comparison_path, errors_path, *, reference_time=None):

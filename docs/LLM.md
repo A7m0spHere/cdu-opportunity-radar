@@ -119,3 +119,5 @@ DeepSeek 的 [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode/
 M2-B.2 审批前只完成离线准备，真实请求为 0；两关样本、固定预算、参数、诊断留存及审批边界见 [M2B2_TEST_PLAN.md](M2B2_TEST_PLAN.md)。专用 probe 默认为 dry-run，真实发送要求明确批准和一致的计划指纹，在独立 SQLite 副本中执行，任一技术失败停止全部剩余请求。
 
 随后获批的 M2-B.2 第一关只发送 ID 34：HTTP 200、finish_reason=stop，最终 content 带 Markdown 代码围栏，裸 JSON 校验失败。累计 1 次 POST、1764 Token，第二关未执行，未重试。详见 [M2B2_RESULTS.md](M2B2_RESULTS.md)；Schema、引用与业务判断没有进入真实验证，原人工标签/数据库不变。
+
+M2-B.2a 已加入严格包装兼容：优先纯 JSON Object，仅允许完整包裹全部响应的单个三反引号 json/无语言块。记录 direct_json 与 normalized_markdown_fence 分开的指标，非法 JSON、其他包装及后续 Schema/引用/事实错误仍拒绝。v1/v2 Prompt 只加强格式指令并更新 Prompt 指纹，Schema 与业务规则保持原样。ID 34 仅有截断脱敏片段，不能完整离线重放；本轮新增付费请求 0。边界、324 项回归结果及待批准单条计划见 [M2B2A_JSON_COMPAT.md](M2B2A_JSON_COMPAT.md)。

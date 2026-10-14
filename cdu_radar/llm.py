@@ -22,6 +22,7 @@ from .llm_schema import SchemaValidationError
 from .models import utc_now
 from .privacy import sanitize
 from .evidence import locate, EvidenceLocationError
+from .llm_json import strict_json, parse_model_json, ModelJSONError, PARSER_VERSION
 
 
 SCHEMA_DETAILS = {
@@ -149,17 +150,6 @@ class LLMConfig:
         return {name: getattr(self, name) for name in names}
 
 
-def strict_json(text):
-    def pairs(items):
-        result = {}
-        for key, value in items:
-            if key in result: raise ValueError("Duplicate JSON key")
-            result[key] = value
-        return result
-    def constant(_):raise ValueError("Non-finite JSON value")
-    return json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
-
-
 def usage_values(body):
     usage = body.get("usage") if isinstance(body, dict) else None
     keys = ["prompt_tokens", "completion_tokens", "total_tokens"]
@@ -201,6 +191,7 @@ class ChatCompletionsProvider:
                          "status_code": None, "error_category": "started", "usage": None,
                          "estimated_cost": None, "currency": config.cost_currency, "elapsed_ms": 0}
                 diagnostic = {"request_ok": None, "json_ok": None, "schema_ok": None, "evidence_ok": None,
+                              "direct_json_ok":None, "parse_method":None, "parser_version":PARSER_VERSION,
                               "analysis_ok": None, "finish_reason": None, "content_chars": None, "reasoning_chars": None,
                               "error_detail": None, "validation_stage": "transport", "json_style": None,
                               "request_format": config.response_format, "thinking_mode": config.thinking_mode,
@@ -274,11 +265,16 @@ class ChatCompletionsProvider:
                     diagnostic["validation_stage"] = "json"
                     diagnostic["json_ok"] = False
                     diagnostic["json_style"] = "markdown_fence" if content.lstrip().startswith("```") else "plain"
-                    try: data = strict_json(content)
-                    except (ValueError, UnicodeError) as exc:
-                        if isinstance(exc, json.JSONDecodeError):
-                            diagnostic.update(json_error_line=exc.lineno, json_error_column=exc.colno)
+                    try: parsed = parse_model_json(content)
+                    except ModelJSONError as exc:
+                        diagnostic.update(parse_method=exc.method,direct_json_ok=False,json_error_detail=exc.detail,
+                            direct_json_error_line=exc.direct_error_line,direct_json_error_column=exc.direct_error_column)
+                        if exc.error_line is not None:
+                            diagnostic.update(json_error_line=exc.error_line,json_error_column=exc.error_column)
                         raise LLMError("invalid_json") from None
+                    data = parsed.value
+                    diagnostic.update(parse_method=parsed.method,direct_json_ok=parsed.method=="direct_json",
+                        direct_json_error_line=parsed.direct_error_line,direct_json_error_column=parsed.direct_error_column)
                     diagnostic.update(json_ok=True, validation_stage="schema")
                     try: result = validator(data)
                     except (ValueError, TypeError, KeyError) as exc:
@@ -355,7 +351,7 @@ class LLMAnalyzer:
         self.prompt_version = contract.PROMPT_VERSION + ":" + fingerprint(self.prompt)[:12]
         self.schema_version = contract.SCHEMA_VERSION + ":" + fingerprint(contract.OUTPUT_SCHEMA)[:12]
         implementation = [files("cdu_radar").joinpath(name).read_text(encoding="utf-8").replace("\r\n", "\n")
-                          for name in ["llm.py", "llm_schema.py", "llm_screening.py", "llm_semantics.py", "evidence.py", "analysis_service.py", "analysis_models.py", "rule_analysis.py", "rules.json", "privacy.py"]]
+                          for name in ["llm.py", "llm_json.py", "llm_schema.py", "llm_screening.py", "llm_semantics.py", "evidence.py", "analysis_service.py", "analysis_models.py", "rule_analysis.py", "rules.json", "privacy.py"]]
         self.version = ("llm-v2:" if config.schema_mode == "screening_v2" else "llm-v1:") + fingerprint([config.identity(), self.prompt, self.prompt_version, self.schema_version, contract.OUTPUT_SCHEMA, implementation])[:24]
 
     def prepare(self, notice):

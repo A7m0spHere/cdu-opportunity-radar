@@ -6,6 +6,7 @@ import json
 import re
 from typing import Protocol
 from urllib.parse import urlsplit
+from .evidence import EvidenceAssessment
 
 SHANGHAI = timezone(timedelta(hours=8), "Asia/Shanghai")
 CATEGORIES = {"competition","hackathon","workshop","lecture","project_recruitment","other_activity","news","administrative","unknown"}
@@ -121,9 +122,16 @@ class NoticeAnalysis:
     status_basis: str = "unknown"
     analysis_state: str = "success"
     student_opportunity: bool | None = None
+    schema_version: str | None = None
+    fact_status: str = "not_checked"
+    evidence_validation: tuple[EvidenceAssessment,...] = ()
 
     def __post_init__(self):
         if type(self.notice_id) is not int or self.notice_id<1:raise ValueError("Invalid analysis id")
+        choice(self.fact_status, {"not_checked", "verified", "review_required"}, "fact status")
+        if not isinstance(self.evidence_validation, tuple) or any(not isinstance(e, EvidenceAssessment) for e in self.evidence_validation):
+            raise ValueError("Invalid evidence assessments")
+        if self.schema_version is not None and not isinstance(self.schema_version, str):raise ValueError("Invalid schema version")
         for name,values in [("category",CATEGORIES),("relevance_level",RELEVANCE),("eligibility_status",ELIGIBILITY),
                             ("ai_use_policy",POLICIES),("opportunity_status",STATUSES),("review_status",REVIEWS),
                             ("candidate_decision",DECISIONS),("base_decision",DECISIONS),
@@ -153,6 +161,7 @@ class NoticeAnalysis:
         try:
             if not isinstance(values["evidence"],list) or not isinstance(values["analysis_reason"],list):raise ValueError("Evidence/reasons must be arrays")
             values["evidence"]=tuple(Evidence(**e) for e in values["evidence"])
+            values["evidence_validation"]=tuple(EvidenceAssessment(**e) for e in values.get("evidence_validation", []))
             values["analysis_reason"]=tuple(values["analysis_reason"])
             return cls(**values)
         except (TypeError,KeyError) as exc:raise ValueError("Invalid analysis schema") from exc

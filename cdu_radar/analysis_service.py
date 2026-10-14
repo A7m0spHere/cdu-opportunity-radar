@@ -3,13 +3,12 @@ from datetime import datetime
 
 from .analysis_models import Evidence,NoticeAnalysis,reference_datetime
 from .models import utc_now
+from .evidence import locate
 from .rule_analysis import DATE,FIELDS,RuleAnalyzer,refresh_time
 
 
 def validate_evidence(notice,result,date_validator=None):
-    supplied="\n".join([notice.title,notice.content,notice.canonical_url,notice.published_at or "",notice.content_source or "",*notice.sources,
-                          *(a.name for a in notice.body_links),*(a.name for a in notice.attachments)])
-    if any(e.kind=="fact" and e.quote not in supplied for e in result.evidence):raise ValueError("Fact quote is not supplied input")
+    if any(e.kind=="fact" and locate(notice,e.quote).status not in {"valid","normalized_match"} for e in result.evidence):raise ValueError("Fact quote is not supplied input")
     if date_validator:date_validator(notice,result)
     for field in ([] if date_validator else [*FIELDS,"event_end_date"]):
         value=getattr(result,field)
@@ -71,6 +70,7 @@ def analyze_one(repository,notice_id,analyzer=None,reference_time=None):
                           "unlocatable_evidence","missing_critical_citation","unsupported_ai_policy","missing_value_citation",
                           "unprovided_organizer","unprovided_closed_status","invalid_date_evidence","collapsed_multiple_dates",
                           "unprovided_registration_url","missing_deadline_basis","missing_start_basis","invalid_schema"}
+            detail_codes |= {"unsupported_eligibility", "unsupported_participation", "identity_mismatch"}
             if category=="schema_validation" and detail in detail_codes:code+="/"+detail
             reason=f"分析失败：{code}；保留原文并转待审核"
             result=NoticeAnalysis(notice.notice_id,notice.content_hash,notice.input_hash,analyzer.version,utc_now(),

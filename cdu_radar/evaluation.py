@@ -7,7 +7,7 @@ from .rule_analysis import RuleAnalyzer
 
 
 def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=False,min_samples=30,
-             notice_ids=None,prediction_reader=None):
+             notice_ids=None,prediction_reader=None,separate_model_metrics=False):
     analyzer=analyzer or RuleAnalyzer();fixed_reference=reference_time is not None;now=reference_datetime(reference_time)
     matrix={"tp":0,"fp":0,"fn":0,"tn":0};errors=[];by_category=Counter();uncertain=0;valid=0;unlabeled=0;stale_date=0;synthetic=0;stale_time=0;untimed=0
     dimensions=Counter();comparisons=Counter();predictions=[];missing=0;failed=0;positive_truth=0;negative_truth=0
@@ -28,12 +28,16 @@ def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=Fa
             missing+=1;predictions.append({"notice_id":notice_id,"truth":truth.worth_recommending,"decision":None,"state":"not_analyzed"})
             continue
         failed+=prediction.analysis_state=="failed"
-        predictions.append({"notice_id":notice_id,"truth":truth.worth_recommending,"decision":prediction.candidate_decision,"state":prediction.analysis_state})
+        predictions.append({"notice_id":notice_id,"truth":truth.worth_recommending,"decision":prediction.candidate_decision,"state":prediction.analysis_state,
+                            "fact_status":prediction.fact_status,"schema_version":prediction.schema_version,
+                            "review_required":prediction.needs_manual_review})
         uncertain+=prediction.candidate_decision=="uncertain"
         # High-recall prefilter: uncertain remains a candidate, not a published recommendation.
         positive=prediction.analysis_state=="failed" or prediction.candidate_decision!="exclude"
         key="tp" if positive and truth.worth_recommending else "fp" if positive else "fn" if truth.worth_recommending else "tn"
         matrix[key]+=1;types=[]
+        if separate_model_metrics and (prediction.analysis_state=="failed" or prediction.candidate_decision=="uncertain" or prediction.fact_status=="review_required"):
+            continue  # Technical fallback and unknowns are not model fact/dimension predictions.
         if key=="fn":types.append("missed_opportunity")
         if key=="fp":types.append("false_positive")
         for field,kind in [("category","category_error"),("relevance_level","ai_relevance_error"),("eligibility_status","eligibility_error"),
@@ -59,7 +63,7 @@ def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=Fa
     tp,fp,fn,tn=(matrix[k] for k in ["tp","fp","fn","tn"])
     precision=tp/(tp+fp) if tp+fp else None;recall=tp/(tp+fn) if tp+fn else None
     f1=2*tp/(2*tp+fp+fn) if 2*tp+fp+fn else None
-    return {"reference_time":now.isoformat() if fixed_reference else None,"reference_policy":"fixed_as_of" if fixed_reference else "per_label_time",
+    report = {"reference_time":now.isoformat() if fixed_reference else None,"reference_policy":"fixed_as_of" if fixed_reference else "per_label_time",
         "analyzer_version":analyzer.version,"metric_target":"candidate_retention (retain + uncertain), not approval",
         "valid_labels":valid,"human_labels":valid-synthetic,"synthetic_labels":synthetic,"unlabeled_or_incomplete":unlabeled,"reference_date_mismatches":stale_date,
         "reference_time_mismatches":stale_time,"labels_without_exact_time":untimed,
@@ -72,3 +76,47 @@ def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=Fa
         "errors_by_category":dict(by_category),"dimension_errors":dict(dimensions),"dimension_compared":dict(comparisons),"error_samples":errors,
         "sample_sufficient":valid>=min_samples,"warning":"没有有效人工标签，无法评估真实效果" if valid==0 else "样本不足，仅供开发评测" if valid<min_samples else "本地样本评测不等于生产验收",
         "production_validated":False,"evaluation_origin":"synthetic_included" if synthetic else "human_only"}
+    if separate_model_metrics:
+        layers = evaluation_layers(predictions)
+        report["legacy_retention_metrics"] = {k: report[k] for k in ["precision", "recall", "f1", "confusion_matrix", "metrics_complete"]}
+        report["legacy_retention_metrics"]["metric_target"] = "system fallback retention; never model accuracy"
+        report.update(report_version="m2b-evaluation-v2", business=layers["business"], system=layers["system"],
+                      metric_target="validated decisive model results; fallback and uncertainty abstain",
+                      model_evaluation_complete=layers["business"]["evaluation_complete"])
+        for key in ["precision", "recall", "f1", "confusion_matrix"]:
+            report[key] = layers["business"]["comparable_metrics"][key] if layers["business"]["evaluation_complete"] else None
+    return report
+
+
+def matrix_metrics(matrix):
+    tp, fp, fn, tn = (matrix[k] for k in ["tp", "fp", "fn", "tn"])
+    return {"precision": tp/(tp+fp) if tp+fp else None, "recall": tp/(tp+fn) if tp+fn else None,
+            "f1": 2*tp/(2*tp+fp+fn) if 2*tp+fp+fn else None, "confusion_matrix": matrix}
+
+
+def evaluation_layers(predictions):
+    decisive = [p for p in predictions if p["state"] == "success" and p["decision"] in {"retain", "exclude"} and p.get("fact_status") != "review_required"]
+    matrix = {"tp":0,"fp":0,"fn":0,"tn":0}
+    for p in decisive:
+        positive = p["decision"] == "retain"
+        matrix["tp" if positive and p["truth"] else "fp" if positive else "fn" if p["truth"] else "tn"] += 1
+    failures = [p for p in predictions if p["state"] == "failed"]
+    unknowns = [p for p in predictions if p["state"] == "success" and p not in decisive]
+    missing = [p for p in predictions if p["state"] == "not_analyzed"]
+    # Missing analysis is conservatively retained by the system, never credited to the model.
+    retained = [p for p in predictions if p not in decisive or p["decision"] != "exclude"]
+    positives = sum(p["truth"] for p in predictions)
+    return {"business": {"validated_results":sum(p["state"]=="success" for p in predictions),
+        "recommended":sum(p["decision"]=="retain" for p in decisive),
+        "not_recommended":sum(p["decision"]=="exclude" for p in decisive),
+        "pending_review":len(unknowns)+len(failures)+len(missing), "business_uncertain":len(unknowns),
+        "technical_failures":len(failures), "not_analyzed":len(missing), "comparable_labels":len(decisive),
+        "comparable_positive_labels":sum(p["truth"] for p in decisive),
+        "comparable_metrics":matrix_metrics(matrix), "evaluation_complete":len(decisive)==len(predictions) and bool(predictions),
+        "unassessable_ids":[p["notice_id"] for p in predictions if p not in decisive],
+        "note":"Comparable subset metrics are conditional on validation, not full-cohort accuracy"},
+        "system": {"final_candidate_recall":sum(p["truth"] for p in retained)/positives if positives else None,
+        "retained_candidates":len(retained), "pending_manual_review":len(unknowns)+len(failures)+len(missing),
+        "automatically_excluded":sum(p["decision"]=="exclude" for p in decisive),
+        "pending_due_to_model_failure":len(failures), "pending_due_to_missing_analysis":len(missing),
+        "note":"Fallback retention is system protection, not correct model identification"}}

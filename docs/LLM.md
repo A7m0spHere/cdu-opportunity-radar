@@ -1,6 +1,6 @@
 # M2-B 模型筛选与对照评测
 
-模型分析与人工标签、审批、原始通知和 RSS 分开。LLM 不读取人工答案，没有工具或附件下载权限。`retain + uncertain`（包括失败后待审的候选）作为保留候选，`exclude` 为排除；这不是发布批准。同一有效人工标签集对照规则与模型，不剔除失败或难例。尚未分析的记录会让完整模型指标留空，不能拿已完成的容易样本冒充全量结果。
+模型分析与人工标签、审批、原始通知和 RSS 分开。LLM 不读取人工答案，没有工具或附件下载权限。M2-B.1 的报告分别显示技术流水线、明确模型判断与系统故障保护；`retain + uncertain` 包括故障保留，只属于系统候选指标。完整模型指标在失败/未知导致覆盖不足时留空。详细故障归因、协议能力边界、初筛 Schema 与待批准计划见 [M2-B.1 离线报告](M2B1_OFFLINE.md)。
 
 ## 配置
 
@@ -27,6 +27,10 @@ $env:CDU_LLM_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'API K
 | CDU_LLM_MAX_OUTPUT_TOKENS | 默认 4096，发送 max_tokens；截断或只有 reasoning 没有最终文本明确失败 |
 | CDU_LLM_BATCH_LIMIT | 默认最多 3 条，最高 100；CLI --limit 不能超过它 |
 | CDU_LLM_RESPONSE_FORMAT | 默认 json_object；支持时可用 json_schema，或显式 none；所有模式均做本地固定 Schema 校验，不自动降级 |
+| CDU_LLM_SCHEMA_MODE | 默认 detailed_v1；可显式 screening_v2，独立 Schema/Prompt/缓存版本 |
+| CDU_LLM_PROTOCOL_PROFILE | 默认 generic；deepseek 在显式启用 thinking 时不发送 temperature，不改变服务或模型 |
+| CDU_LLM_OUTPUT_TOKEN_PARAMETER | 默认 max_tokens；可显式 max_completion_tokens，实际第三方支持需验证 |
+| CDU_LLM_STOP_AFTER_FORMAT_FAILURES | 默认连续 2 条格式失败停止本批，1—10；小样本建议 1；不增加重试 |
 | CDU_LLM_PROMPT_FILE | 可选可信本地补充 Prompt；内容进入版本指纹，不读取无关配置 |
 | CDU_LLM_INPUT_PRICE_PER_MILLION | 可选每百万输入 Token 单价 |
 | CDU_LLM_OUTPUT_PRICE_PER_MILLION | 可选每百万输出 Token 单价；必须与输入价一起设置 |
@@ -82,7 +86,16 @@ LLM 日期验证与 M2-A 规则的固定标签解析分开：短日期引用会�
 
 默认按每条标签自己的参考点，沿用现有 evaluate 的正样本定义。可用 --notice-id 明确限制诊断样本；完整对照不限制 ID，覆盖全部有效 human 标签。可用 --as-of 指定固定时点，但只纳入时点一致的人工标签。没有人工标签或旧输入版本不能计入监督指标。
 
-报告包括两种方案的混淆矩阵、Precision/Recall/F1、正/负样本、不确定和失败比例、完整覆盖状态、具体 FP/FN、纠正的规则 FN 和被改错的原正确记录。missing 模型结果不算失败或成功：not_analyzed_count 明示数量，完整矩阵及主指标为 null；partial_confusion_matrix 只作联调诊断。已尝试的失败仍进入完整样本集，并作为待审候选处理，不能通过排除失败提高指标。
+新报告的 technical 记录各技术阶段；business 记录成功结果、推荐/不推荐/待审及可比较标签；system 记录包含故障保护的候选召回和人工队列。失败和业务不确定性不计模型 TP 或事实维度错误；它们仍在总体覆盖与未评估清单中。comparable_metrics 只表示明确成功结果子集，并标明子集正标签数；全量模型覆盖不完整时顶层 Precision/Recall/F1 留空。旧候选矩阵在 legacy_retention_metrics 留档，历史文件不覆盖。当前校验对旧成功缓存的拒绝另列 cache_revalidation_rejections，不假装尚未分析。
+
+不依赖当前 Provider 配置的历史原样查看与故障诊断：
+
+```powershell
+.\.venv\Scripts\python.exe -m cdu_radar llm history --analysis-version llm-v1:89e8a0e080bd523db08b159c --output data/m2b1-history-v1.json
+.\.venv\Scripts\python.exe -m cdu_radar llm diagnose --output data/m2b1-diagnosis-final.json
+```
+
+history 为 archive_only，不宣称经过新校验。diagnose 不创建表、不写库、不读 Key、不发请求；旧输出不存在的细节均为 unknown_unobservable。
 
 dimension_compared 记录用户实际填写了多少资格、截止时间、政策等细分真值。首批 36 条只填写推荐值，这些维度暂无真值，空错误数不表示零错误。对照不把模型/规则预测补成标签，人工审核决定也不自动改成批准。
 

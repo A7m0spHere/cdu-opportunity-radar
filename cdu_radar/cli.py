@@ -67,6 +67,7 @@ def main(argv=None) -> int:
     llm_actions = llm.add_subparsers(dest="llm_action", required=True)
     llm_analyze = llm_actions.add_parser("analyze", help="Default: preview only; --send explicitly spends API requests")
     llm_analyze.add_argument("--limit", type=positive_int)
+    llm_analyze.add_argument("--retry-failed", action="store_true", help="Include previously failed results; explicit ids also allow retry")
     mode = llm_analyze.add_mutually_exclusive_group()
     mode.add_argument("--send", action="store_true")
     mode.add_argument("--dry-run", action="store_true")
@@ -74,6 +75,7 @@ def main(argv=None) -> int:
     llm_compare = llm_actions.add_parser("compare", help="Read predictions; never call a model")
     llm_compare.add_argument("--output", type=Path, default=Path("data/m2b-comparison.json"))
     llm_compare.add_argument("--errors-output", type=Path)
+    llm_compare.add_argument("--analysis-version", help="Explicit historical cache version; revalidate, never send")
     for command in (llm_analyze, llm_compare):
         command.add_argument("--db", type=Path, default=Path("data/m2b.sqlite3"))
         command.add_argument("--notice-id", type=positive_int, action="append")

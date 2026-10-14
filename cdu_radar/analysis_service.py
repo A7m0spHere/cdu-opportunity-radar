@@ -6,11 +6,12 @@ from .models import utc_now
 from .rule_analysis import DATE,FIELDS,RuleAnalyzer,refresh_time
 
 
-def validate_evidence(notice,result):
+def validate_evidence(notice,result,date_validator=None):
     supplied="\n".join([notice.title,notice.content,notice.canonical_url,notice.published_at or "",notice.content_source or "",*notice.sources,
                           *(a.name for a in notice.body_links),*(a.name for a in notice.attachments)])
     if any(e.kind=="fact" and e.quote not in supplied for e in result.evidence):raise ValueError("Fact quote is not supplied input")
-    for field in [*FIELDS,"event_end_date"]:
+    if date_validator:date_validator(notice,result)
+    for field in ([] if date_validator else [*FIELDS,"event_end_date"]):
         value=getattr(result,field)
         if value is None:continue
         found=False
@@ -37,7 +38,7 @@ def validate_output(notice,result,analyzer):
         raise ValueError("Analyzer output identity mismatch")
     if result.model_name!=getattr(analyzer,"model_name",None):raise ValueError("Analyzer model identity mismatch")
     if result.review_status!="pending" or result.reviewed_at or result.review_reason:raise ValueError("Analyzer cannot approve or reject")
-    validate_evidence(notice,result)
+    validate_evidence(notice,result,getattr(analyzer,"validate_dates",None))
 
 
 def analyze_one(repository,notice_id,analyzer=None,reference_time=None):
@@ -65,6 +66,12 @@ def analyze_one(repository,notice_id,analyzer=None,reference_time=None):
                      "model_refusal","unexpected_tool_call","incomplete_output","no_final_text","invalid_json",
                      "schema_validation","missing_api_key","empty_body","input_too_long"}
             code=category if category in allowed else type(exc).__name__
+            detail=getattr(exc,"detail",None)
+            detail_codes={"invalid_type_or_enum","missing_or_extra_fields","missing_reason_or_evidence","unknown_evidence_field",
+                          "unlocatable_evidence","missing_critical_citation","unsupported_ai_policy","missing_value_citation",
+                          "unprovided_organizer","unprovided_closed_status","invalid_date_evidence","collapsed_multiple_dates",
+                          "unprovided_registration_url","missing_deadline_basis","missing_start_basis","invalid_schema"}
+            if category=="schema_validation" and detail in detail_codes:code+="/"+detail
             reason=f"分析失败：{code}；保留原文并转待审核"
             result=NoticeAnalysis(notice.notice_id,notice.content_hash,notice.input_hash,analyzer.version,utc_now(),
                 "unknown","uncertain","uncertain","unspecified","unknown",(reason,),

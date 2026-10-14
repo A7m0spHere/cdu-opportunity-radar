@@ -12,7 +12,7 @@ from cdu_radar.analysis_models import Evidence, ManualLabel, reference_datetime
 from cdu_radar.analysis_service import analyze_one
 from cdu_radar.analysis_store import AnalysisRepository
 from cdu_radar.cli import main
-from cdu_radar.llm import ChatCompletionsProvider, LLMAnalyzer, LLMConfig, LLMError
+from cdu_radar.llm import ChatCompletionsProvider, LLMAnalyzer, LLMConfig, LLMError, external_text
 from cdu_radar.llm_schema import PROPERTIES, TEXT_FIELDS
 from cdu_radar.llm_workflow import LLMLedger, compare, preview_batch, run_batch, select_ids
 from cdu_radar.models import Article, ArticleLink
@@ -317,3 +317,98 @@ def test_v3_migration_keeps_v2_labels_and_reopens_without_downgrade(store, confi
         assert reopened.db.execute('PRAGMA user_version').fetchone()[0] == 3
         assert dict(reopened.feed_rows(1)[0]) == before
         assert reopened.db.execute('PRAGMA foreign_key_check').fetchall() == []
+
+
+def test_outbound_identity_redaction_preserves_years_and_qualification():
+    title = '学院开展中国国际大学生创新大赛（2026）院级选拔'
+    assert external_text(title, False) == title
+    body = '我院学子示例甲(23物联)、示例乙（23物联）参赛。在示例丙和示例丁老师指导下完成项目。\n（图/示例戊、文/示例己）活动记录。\n一审：示例庚\n仅限本科生，教师可以指导。'
+    result = external_text(body)
+    assert '我院学子[身份信息已移除]' in result
+    assert all(name not in result for name in ['示例甲', '示例乙', '示例丙', '示例丁', '示例戊', '示例己', '示例庚'])
+    assert '仅限本科生，教师可以指导' in result
+
+
+def test_optional_thinking_mode_and_safe_validation_detail(store, config):
+    ident = seed(store); repo = AnalysisRepository(store)
+    config = replace(config, thinking_mode='disabled', temperature=0)
+    def handler(request):
+        assert json.loads(request.content)['thinking'] == {'type': 'disabled'}
+        payload = model_payload(repo.input(ident)); payload.pop('category')
+        return response(payload)
+    result, _ = analyze_one(repo, ident, analyzer_for(repo, config, handler), ASOF)
+    assert 'schema_validation/missing_or_extra_fields' in ' '.join(result.analysis_reason)
+    assert 'example-only-credential' not in json.dumps(result.to_dict())
+
+
+@pytest.mark.parametrize('mode', ['narrative_range', 'partial_year_null', 'publication_misuse'])
+def test_llm_date_quotes_support_narrative_without_inventing_years(store, config, mode):
+    body = BODY + '\n2026年8月10日至8月13日全国大赛决赛在本市举行。\n学院于6月8日举办院级选拔。\n发布时间：2026年10月1日。'
+    ident = seed(store, body); repo = AnalysisRepository(store); payload = model_payload(repo.input(ident))
+    if mode == 'narrative_range':
+        payload.update(event_start_date='2026-08-10', event_end_date='2026-08-13')
+        for field, value in [('event_start_date', '2026-08-10'), ('event_end_date', '2026-08-13')]:
+            payload['evidence'].append(asdict(Evidence(field, 'fact', '2026年8月10日至8月13日全国大赛决赛在本市举行', '同一句明确年份的比赛日期区间', value)))
+    elif mode == 'partial_year_null':
+        payload['evidence'].append(asdict(Evidence('internal_event_date', 'fact', '学院于6月8日举办院级选拔', '原文未明示年份，归一日期未知', None)))
+    else:
+        payload['event_start_date'] = '2026-10-01'
+        payload['evidence'].append(asdict(Evidence('event_start_date', 'fact', '发布时间：2026年10月1日', '错误日期用途', '2026-10-01')))
+    result, _ = analyze_one(repo, ident, analyzer_for(repo, config, lambda r: response(payload)), ASOF)
+    assert result.analysis_state == ('failed' if mode == 'publication_misuse' else 'success')
+
+
+def test_json_mode_optional_fields_and_literal_date_values_are_normalized(store, config):
+    ident = seed(store); repo = AnalysisRepository(store); payload = model_payload(repo.input(ident))
+    for field in TEXT_FIELDS:
+        if payload[field] is None: del payload[field]
+    for e in payload['evidence']:
+        if e['field'] == 'registration_deadline' and e['kind'] == 'fact':
+            e.update(quote='2026年11月1日', value='2026年11月1日')
+        if e['value'] is None: del e['value']
+        if e['field'] == 'student_opportunity': e['value'] = True
+    result, _ = analyze_one(repo, ident, analyzer_for(repo, config, lambda r: response(payload)), ASOF)
+    assert result.analysis_state == 'success' and result.registration_deadline == '2026-11-01'
+
+
+def test_llm_cannot_inherit_deadline_year_from_metadata(store, config):
+    body = '参赛对象：我校本科生。允许使用AI。报名截止：9月17日。'
+    ident = seed(store, body); repo = AnalysisRepository(store); payload = model_payload(repo.input(ident))
+    payload.update(registration_deadline='2026-09-17', status_basis='deadline')
+    payload['evidence'].append(asdict(Evidence('registration_deadline', 'fact', '报名截止：9月17日', '错误地继承发布日期年份', '2026-09-17')))
+    result, _ = analyze_one(repo, ident, analyzer_for(repo, config, lambda r: response(payload)), ASOF)
+    assert result.analysis_state == 'failed'
+
+
+def test_query_stripping_cannot_invent_complete_registration_url(store, config):
+    body = BODY + '\n报名链接：https://registration.example.test/join?entry=example'
+    ident = seed(store, body); repo = AnalysisRepository(store); payload = model_payload(repo.input(ident))
+    payload['registration_url'] = 'https://registration.example.test/join'
+    payload['evidence'].append(asdict(Evidence('registration_url', 'fact', '报名链接：https://registration.example.test/join', '错误地使用删掉参数的地址', payload['registration_url'])))
+    result, _ = analyze_one(repo, ident, analyzer_for(repo, config, lambda r: response(payload)), ASOF)
+    assert result.analysis_state == 'failed'
+
+
+def test_cli_historical_comparison_revalidates_cache_without_api(store, config, monkeypatch, tmp_path):
+    ident = seed(store); repo = AnalysisRepository(store); analyzer = analyzer_for(repo, config, lambda r: response(model_payload(repo.input(ident))))
+    notice = repo.input(ident)
+    with repo.db: repo.add_label(ManualLabel(ident, notice.content_hash, notice.input_hash, 'human', 'synthetic-test-user', worth_recommending=True, reference_date='2026-10-14'))
+    analyze_one(repo, ident, analyzer, ASOF)
+    monkeypatch.setenv('CDU_LLM_BASE_URL', config.base_url); monkeypatch.setenv('CDU_LLM_MODEL', config.model)
+    monkeypatch.delenv('CDU_LLM_API_KEY', raising=False)
+    db = Path(store.db.execute('PRAGMA database_list').fetchone()[2]); before = hashlib.sha256(db.read_bytes()).hexdigest()
+    out = tmp_path/'historical.json'
+    assert main(['llm', 'compare', '--db', str(db), '--analysis-version', analyzer.version, '--output', str(out)]) == 0
+    report = json.loads(out.read_text(encoding='utf-8'))
+    assert report['llm']['valid_labels'] == 1 and report['usage']['api_requests'] == 1
+    assert hashlib.sha256(db.read_bytes()).hexdigest() == before
+
+
+def test_default_queue_does_not_spend_repeatedly_on_old_failures(store, config):
+    first = seed(store); second = seed(store, ident=2); repo = AnalysisRepository(store)
+    analyzer = analyzer_for(repo, config, lambda r: httpx.Response(401))
+    analyze_one(repo, first, analyzer, ASOF)
+    assert select_ids(repo, analyzer, limit=1) == [second]
+    assert select_ids(repo, analyzer, limit=1, retry_failed=True) == [first]
+    assert select_ids(repo, analyzer, notice_ids=[first], limit=1) == [first]
+    with pytest.raises(ValueError): run_batch(repo, analyzer, [second, second])

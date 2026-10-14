@@ -87,6 +87,29 @@ class AnalysisInput:
 
 
 @dataclass(frozen=True)
+class FieldValidation:
+    """Trusted field decision, distinct from model proposal and human approval."""
+    field: str
+    status: str
+    proposed_value: str | bool | None
+    trusted_value: str | bool | None
+    reason: str
+    evidence_indices: tuple[int, ...] = ()
+    error_paths: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        choice(self.status, {"verified", "missing", "unsupported", "unknown"}, "field validation status")
+        if not isinstance(self.field, str) or not self.field or not isinstance(self.reason, str) or not self.reason:
+            raise ValueError("Field validation requires field and reason")
+        for v in [self.proposed_value, self.trusted_value]:
+            if v is not None and not isinstance(v, (str, bool)):raise ValueError("Invalid field value")
+        if not isinstance(self.evidence_indices, tuple) or any(type(i) is not int or i < 0 for i in self.evidence_indices):
+            raise ValueError("Invalid field evidence indices")
+        if not isinstance(self.error_paths, tuple) or any(not isinstance(p, str) or not p.startswith("$.") for p in self.error_paths):
+            raise ValueError("Invalid field error paths")
+
+
+@dataclass(frozen=True)
 class NoticeAnalysis:
     notice_id: int
     content_hash: str
@@ -125,10 +148,15 @@ class NoticeAnalysis:
     schema_version: str | None = None
     fact_status: str = "not_checked"
     evidence_validation: tuple[EvidenceAssessment,...] = ()
+    validation_version: str | None = None
+    field_validation: tuple[FieldValidation, ...] = ()
 
     def __post_init__(self):
         if type(self.notice_id) is not int or self.notice_id<1:raise ValueError("Invalid analysis id")
         choice(self.fact_status, {"not_checked", "verified", "review_required"}, "fact status")
+        if self.validation_version is not None and not isinstance(self.validation_version, str):raise ValueError("Invalid validation version")
+        if not isinstance(self.field_validation, tuple) or any(not isinstance(f, FieldValidation) for f in self.field_validation):
+            raise ValueError("Invalid field validations")
         if not isinstance(self.evidence_validation, tuple) or any(not isinstance(e, EvidenceAssessment) for e in self.evidence_validation):
             raise ValueError("Invalid evidence assessments")
         if self.schema_version is not None and not isinstance(self.schema_version, str):raise ValueError("Invalid schema version")
@@ -162,6 +190,8 @@ class NoticeAnalysis:
             if not isinstance(values["evidence"],list) or not isinstance(values["analysis_reason"],list):raise ValueError("Evidence/reasons must be arrays")
             values["evidence"]=tuple(Evidence(**e) for e in values["evidence"])
             values["evidence_validation"]=tuple(EvidenceAssessment(**e) for e in values.get("evidence_validation", []))
+            values["field_validation"]=tuple(FieldValidation(**dict(f, evidence_indices=tuple(f.get("evidence_indices", [])),
+                error_paths=tuple(f.get("error_paths", [])))) for f in values.get("field_validation", []))
             values["analysis_reason"]=tuple(values["analysis_reason"])
             return cls(**values)
         except (TypeError,KeyError) as exc:raise ValueError("Invalid analysis schema") from exc

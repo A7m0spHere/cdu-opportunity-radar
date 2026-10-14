@@ -1,0 +1,11 @@
+{
+  "source": "synthetic_adaptation_of_ID34_observed_fields",
+  "full_response_available": false,
+  "body": "参赛对象：我校全体具有正式学籍的全日制在校本、专科学生。须具备C语言编程基础并通过面试选拔。报名时间：5月27日至6月5日。",
+  "evidence": [
+    {"field": "category", "quote": "AI应用大赛报名", "value": null},
+    {"field": "eligibility_status", "quote": "我校全体具有正式学籍的全日制在校本、专科学生", "value": null},
+    {"field": "registration_start_date", "quote": "报名时间：5月27日至6月5日", "value": null},
+    {"field": "registration_deadline", "quote": "报名时间：5月27日至6月5日", "value": null}
+  ]
+}

@@ -1,11 +1,10 @@
 """Local human publication decisions, independent of labels and predictions."""
-from datetime import datetime
 import hashlib
 import json
 import re
 import uuid
 
-from .analysis_models import fingerprint, reference_datetime, InputLink
+from .analysis_models import fingerprint, reference_datetime, InputLink, NoticeAnalysis, ManualLabel
 from .evidence import locate, normalize
 from .llm_semantics import supports_participation, supports_policy
 from .screening_dates import date_reason, conflicting_dates, DATE_FIELDS, role
@@ -82,6 +81,33 @@ def full_statement(notice, quote):
     return any(normalize(c).rstrip('。；')==target for c in [notice.title,*re.split(r'[。；\n]',notice.content)])
 
 
+def registration_constraints(content):
+    """Read expiry constraints without filling or certifying any draft fact.
+
+    Keep dates on contact lines internally; no identities or source excerpts are
+    returned. Publication metadata, event dates and tentative dates are excluded.
+    """
+    observed={f:set() for f in ['registration_deadline','internal_deadline']}
+    closed=False
+    for clause in re.split(r'[，,。；\n]',sanitize(content,remove_identity_lines=False)):
+        clause=normalize(clause)
+        if re.search(r'报名已结束|报名已经截止|征集已结束|停止报名',clause) and not re.search(r'并非|不是|尚未|是否|若|如果',clause):closed=True
+        if re.search(r'暂定|预计|拟定|可能|发布日期|发布时间',clause):continue
+        try:dates,pairs=quoted_dates(clause)
+        except ValueError:continue
+        field=role(clause)
+        if field in observed:observed[field].update(dates)
+        elif pairs and re.search(r'报名时间|报名期间',clause):observed['registration_deadline'].update(p[1] for p in pairs)
+    return observed,closed
+
+
+def source_expiry_reason(content, now):
+    observed,closed=registration_constraints(content)
+    if closed:return 'source_explicitly_closed'
+    if any(values and all(deadline_moment(v)<now for v in values) for values in observed.values()):return 'source_registration_expired'
+    return None
+
+
 class PublicationRepository:
     def __init__(self, repository):
         self.repository=repository;self.db=repository.db
@@ -92,23 +118,41 @@ class PublicationRepository:
         return dict(row) if row else None
 
     def effective(self, ident, now=None):
-        now=reference_datetime(now);_,version=snapshot(self.db,ident);r=self.current(ident)
+        now=reference_datetime(now);raw,version=snapshot(self.db,ident);r=self.current(ident)
         if r is None:return {'review_status':'pending','publication_status':'unpublished','valid':False,'notice_version_hash':version}
         valid=r['review_status']=='approved' and r['publication_status'] in {'ready','published'} and r['notice_version_hash']==version
-        if valid:valid=now <= reference_datetime(json.loads(r['approved_payload'])['valid_until'])
+        invalid_reason=None
+        if valid:
+            if now > reference_datetime(json.loads(r['approved_payload'])['valid_until']):invalid_reason='approval_expired'
+            else:invalid_reason=source_expiry_reason(raw['content'],now)
+            valid=invalid_reason is None
         effective='needs_revision' if r['review_status']=='approved' and not valid else r['review_status']
-        return dict(r,effective_review_status=effective,valid=valid,current_notice_version_hash=version)
+        return dict(r,effective_review_status=effective,valid=valid,current_notice_version_hash=version,invalid_reason=invalid_reason)
+
+    def advisory_records(self, table, ident, input_hash, content_hash, errors):
+        records=[]
+        if not table_exists(self.db,table):return records
+        validator=NoticeAnalysis.from_dict if table=='notice_analyses' else lambda a:ManualLabel(**a)
+        for row in self.db.execute(f'SELECT id,payload FROM {table} WHERE notice_id=? ORDER BY id DESC',(ident,)):
+            try:
+                a=json.loads(row['payload'])
+                if not isinstance(a,dict):raise TypeError('Advisory record must be an object')
+                validator(a)
+            except json.JSONDecodeError:
+                errors.append({'table':table,'record_id':row['id'],'error_category':'invalid_json'});continue
+            except (ValueError,TypeError,KeyError,AttributeError,RecursionError):
+                errors.append({'table':table,'record_id':row['id'],'error_category':'invalid_record'});continue
+            a['matches_current_input']=a.get('input_hash')==input_hash
+            if table=='notice_analyses':a['matches_current_content']=a.get('content_hash')==content_hash
+            records.append(a)
+        return records
 
     def show(self, ident, now=None):
         row,version=snapshot(self.db,ident)
         input_hash=self.repository.input(ident).input_hash
-        analyses=[]
-        if table_exists(self.db,'notice_analyses'):
-            for r in self.db.execute('SELECT payload FROM notice_analyses WHERE notice_id=? ORDER BY id DESC',(ident,)):
-                a=json.loads(r[0]);a['matches_current_content']=a.get('content_hash')==row['content_hash'];a['matches_current_input']=a.get('input_hash')==input_hash;analyses.append(a)
-        labels=[]
-        if table_exists(self.db,'manual_labels'):
-            labels=[dict(json.loads(r[0]),matches_current_input=json.loads(r[0]).get('input_hash')==input_hash) for r in self.db.execute('SELECT payload FROM manual_labels WHERE notice_id=? ORDER BY id DESC',(ident,))]
+        advisory_errors=[]
+        analyses=self.advisory_records('notice_analyses',ident,input_hash,row['content_hash'],advisory_errors)
+        labels=self.advisory_records('manual_labels',ident,input_hash,row['content_hash'],advisory_errors)
         old_reviews=[]
         if table_exists(self.db,'analysis_reviews'):
             old_reviews=[dict(r) for r in self.db.execute('SELECT * FROM analysis_reviews WHERE notice_id=? ORDER BY id DESC',(ident,))]
@@ -116,7 +160,8 @@ class PublicationRepository:
         return {'notice':dict(row,title=sanitize(row['title'],False),content=sanitize(row['content'])),
             'notice_version_hash':version,'sources':[dict(r) for r in self.repository.store.origins(ident)],
             'analyses':analyses,'evaluation_labels':labels,'evaluation_labels_are_publication_approval':False,
-            'legacy_analysis_reviews':old_reviews,'publication':self.effective(ident,now),'checks_before_approval':facts_to_check}
+            'legacy_analysis_reviews':old_reviews,'publication':self.effective(ident,now),'checks_before_approval':facts_to_check,
+            'advisory_errors':advisory_errors}
 
     def queue(self, now=None, all_statuses=False):
         result=[]
@@ -144,18 +189,8 @@ class PublicationRepository:
         InputLink('',draft['source_url'])
         quote=text(draft['participation_quote'],'participation_quote',1000)
         if not supports_participation(True,quote,n):raise ValueError('Participation quote lacks a supported invitation')
-        observed={f:set() for f in ['registration_deadline','internal_deadline']}
-        for clause in re.split(r'[，,。；\n]',n.content):
-            clause=normalize(clause)
-            if re.search(r'报名已结束|报名已经截止|征集已结束|停止报名',clause) and not re.search(r'并非|不是|尚未|是否|若|如果',clause):raise ValueError('Original source explicitly closes registration')
-            if re.search(r'暂定|预计|拟定|可能|发布日期|发布时间',clause):continue
-            try:dates,pairs=quoted_dates(clause)
-            except ValueError:continue
-            field=role(clause)
-            if field in observed:observed[field].update(dates)
-            elif pairs and re.search(r'报名时间|报名期间',clause):observed['registration_deadline'].update(p[1] for p in pairs)
-        if any(values and all(deadline_moment(v)<now for v in values) for values in observed.values()):
-            raise ValueError('Original source registration route has expired; need updated official information')
+        observed,closed=registration_constraints(raw['content'])
+        if source_expiry_reason(raw['content'],now):raise ValueError('Original source registration route has expired or explicitly closed; need updated official information')
         until=draft['valid_until']
         if not isinstance(until,str) or 'T' not in until:raise ValueError('valid_until requires an explicit timestamp with timezone')
         point=reference_datetime(until)
@@ -175,6 +210,10 @@ class PublicationRepository:
             elif not full_statement(n,q) or not supports_policy(entry['value'],q,n):raise ValueError('AI policy is not supported within its complete claimed scope')
             trusted[field]=dict(entry,quote=q)
         deadlines=[deadline_moment(trusted[f]['value']) for f in ['registration_deadline','internal_deadline'] if trusted[f]]
+        # A unique source deadline constrains the maintenance window even when
+        # the curator leaves that fact unknown. Multiple dates stay separate;
+        # do not choose a min/max as a supposed confirmed deadline.
+        deadlines.extend(deadline_moment(next(iter(values))) for values in observed.values() if len(values)==1)
         if deadlines:point=min([point,*deadlines])
         if point<=now:raise ValueError('Verified registration route has closed')
         if trusted['registration_start_date'] and trusted['registration_deadline'] and reference_datetime(trusted['registration_start_date']['value'])>deadline_moment(trusted['registration_deadline']['value']):raise ValueError('Registration starts after its deadline')
@@ -196,8 +235,9 @@ class PublicationRepository:
         material={'notice_id':ident,'notice_content_hash':n['content_hash'],'notice_version_hash':version,'review_status':status,
             'reviewer':reviewer,'review_reason':reason,'approved':approved,'previous_review_id':current['id'] if current else None,
             'ack_unknown':bool(ack_unknown),'ack_correction':bool(ack_correction)}
+        shown=self.show(ident,now)
         return dict(material,confirmation_token=fingerprint(material),correction_required=correction,
-            preview=True,checks_before_approval=self.show(ident,now)['checks_before_approval'])
+            preview=True,checks_before_approval=shown['checks_before_approval'],advisory_errors=shown['advisory_errors'])
 
     def decide(self, ident, status, reviewer, reason, *, confirm, draft=None, ack_unknown=False, ack_correction=False, now=None):
         # Caller holds BEGIN IMMEDIATE; recheck source and review revision before writing.
@@ -232,7 +272,7 @@ class PublicationRepository:
         for n in self.db.execute('SELECT id FROM notices ORDER BY id'):
             state=self.effective(n[0],now)
             if state['valid']:rows.append(state)
-            elif state.get('review_status')=='approved':excluded.append({'notice_id':n[0],'reason':'stale_or_expired_or_withheld'})
+            elif state.get('review_status')=='approved':excluded.append({'notice_id':n[0],'reason':state.get('invalid_reason') or 'stale_or_expired_or_withheld'})
         rows.sort(key=lambda r:(r['published_at'] or r['reviewed_at'],r['guid']),reverse=True)
         material=[{k:r[k] for k in ['id','notice_id','notice_version_hash','approved_payload','guid','published_at','first_exported_at','publication_status']} for r in rows]
         return {'items':rows,'excluded':excluded,'new_publications':sum(r['first_exported_at'] is None for r in rows),

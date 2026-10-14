@@ -1,11 +1,13 @@
 """Fixed model contract; trusted code owns identities, time and approvals."""
 from datetime import datetime
+from dataclasses import replace
 import re
 
 from .analysis_models import (CATEGORIES, RELEVANCE, ELIGIBILITY, POLICIES,
                               DECISIONS, Evidence, NoticeAnalysis)
 from .analysis_service import validate_output
 from .models import utc_now
+from .evidence import locate, literal, normalize
 from .rule_analysis import DATE, FIELDS, RuleAnalyzer, refresh_time
 
 SCHEMA_VERSION = "llm-schema-v1"
@@ -88,6 +90,8 @@ def quoted_dates(text):
 
 def citation_context(notice, quote):
     """Locate literal citations in body clauses; never search publication metadata."""
+    match = locate(notice, quote)
+    if match.source == "content":quote = literal(notice, match)
     contexts = []
     for clause in re.split(r"[\n。；]", notice.content):
         if quote in clause:
@@ -106,9 +110,10 @@ def validate_llm_dates(notice, result):
         if e.value is None and getattr(result, e.field) is None: continue
         expected = "event_start_date" if e.field == "event_end_date" else e.field
         contexts = citation_context(notice, e.quote)
+        contexts = [normalize(context) for context in contexts]
         roles = {next((name for name, pattern in DATE_ROLES.items() if pattern.search(context)), None) for context in contexts}
-        dates, ranges = quoted_dates(e.quote)
-        if any(re.search(r"发布时间|发布日期|发布于", context) for context in contexts) or roles != {expected}:
+        dates, ranges = quoted_dates(normalize(literal(notice, locate(notice, e.quote)) or e.quote))
+        if any(re.search(r"发布时间|发布日期|发布于|暂定|预计|拟定|可能", context) for context in contexts) or roles != {expected}:
             raise ValueError("Date evidence must preserve quoted value and purpose")
         if e.value not in dates:
             # A literal partial date is evidence of a date mention, not a normalized year.
@@ -126,20 +131,27 @@ def validate_llm_dates(notice, result):
             raise ValueError("Multiple dates cannot become a single deadline/start date")
 
 
-def validate_schema(value, schema=OUTPUT_SCHEMA):
+class SchemaValidationError(ValueError):
+    def __init__(self, message, path, missing_fields=()):
+        super().__init__(message)
+        self.path = path
+        self.missing_fields = missing_fields
+
+
+def validate_schema(value, schema=OUTPUT_SCHEMA, path="$"):
     """Validate the deliberately small JSON Schema subset used by this contract."""
     types = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
-    actual = "null" if value is None else "boolean" if type(value) is bool else "string" if isinstance(value, str) else "array" if isinstance(value, list) else "object" if isinstance(value, dict) else "invalid"
+    actual = "null" if value is None else "boolean" if type(value) is bool else "integer" if type(value) is int else "string" if isinstance(value, str) else "array" if isinstance(value, list) else "object" if isinstance(value, dict) else "invalid"
     if actual not in types or "enum" in schema and value not in schema["enum"]:
-        raise ValueError("Invalid LLM schema type or enum")
+        raise SchemaValidationError("Invalid LLM schema type or enum", path)
     if actual == "object":
-        if set(value) != set(schema["required"]): raise ValueError("Missing or extra LLM fields")
-        for name, item in value.items(): validate_schema(item, schema["properties"][name])
+        if set(value) != set(schema["required"]): raise SchemaValidationError("Missing or extra LLM fields", path, tuple(sorted(set(schema["required"])-set(value))))
+        for name, item in value.items(): validate_schema(item, schema["properties"][name], path + "." + name)
     elif actual == "array":
-        if len(value) > 100: raise ValueError("LLM array exceeds bound")
-        for item in value: validate_schema(item, schema["items"])
+        if len(value) > 100: raise SchemaValidationError("LLM array exceeds bound", path)
+        for index, item in enumerate(value): validate_schema(item, schema["items"], path + f"[{index}]")
     elif actual == "string" and len(value) > 2000:
-        raise ValueError("LLM field exceeds bound")
+        raise SchemaValidationError("LLM field exceeds bound", path)
 
 
 def coerce_result(payload, notice, supplied, analyzer, reference_time):
@@ -167,10 +179,7 @@ def coerce_result(payload, notice, supplied, analyzer, reference_time):
     supported = set(PROPERTIES) | {"opportunity_status", "attachments", "input_integrity"}
     if any(e.field not in supported for e in evidence): raise ValueError("Unknown evidence field")
     # Also locate inference citations; an invented quotation is never evidence.
-    source_text = "\n".join([supplied.title, supplied.content, supplied.canonical_url,
-                            supplied.published_at or "", supplied.content_source or "", *supplied.sources,
-                            *(a.name for a in supplied.attachments), *(a.name for a in supplied.body_links)])
-    if any(e.quote and e.quote not in source_text for e in evidence):
+    if any(e.quote and locate(supplied, e.quote).status not in {"valid", "normalized_match"} for e in evidence):
         raise ValueError("Unlocatable evidence")
     rules = RuleAnalyzer()
     for field, known in [("eligibility_status", {"eligible", "ineligible"}),
@@ -181,10 +190,17 @@ def coerce_result(payload, notice, supplied, analyzer, reference_time):
                      (e.kind == "fact" or field == "student_opportunity" and e.kind == "inference")]
             if not facts: raise ValueError("Critical judgment lacks factual citation")
             if field == "ai_use_policy":
-                group = {"explicitly_allowed": "allowed_ai", "partially_allowed": "partial_ai",
-                         "explicitly_prohibited": "prohibited_ai"}[payload[field]]
-                if not any(rules.match(group, e.quote) for e in facts):
+                from .llm_semantics import supports_policy
+                if not any(supports_policy(payload[field], e.quote, supplied) for e in facts):
                     raise ValueError("AI policy quote lacks the claimed permission/prohibition")
+            if field == "eligibility_status":
+                from .llm_semantics import supports_eligibility
+                if not any(supports_eligibility(payload[field], e.quote, supplied) for e in facts):
+                    raise ValueError("Eligibility quote lacks the claimed qualification")
+            if field == "student_opportunity":
+                from .llm_semantics import supports_participation
+                if not any(supports_participation(payload[field], e.quote, supplied) for e in facts):
+                    raise ValueError("Participation quote contradicts the claimed opportunity")
     for field in ["organizer", "registration_url"]:
         if payload[field] and not any(e.field == field and e.kind == "fact" and
                                       (e.value == payload[field] or payload[field] in e.quote) for e in evidence):
@@ -208,7 +224,9 @@ def coerce_result(payload, notice, supplied, analyzer, reference_time):
         payload["category"], payload["relevance_level"], payload["eligibility_status"], payload["ai_use_policy"],
         "unknown", tuple(payload["analysis_reason"]), evidence, bool(review), payload["candidate_decision"],
         payload["candidate_decision"], model_name=analyzer.model_name, status_basis=payload["status_basis"],
-        student_opportunity=payload["student_opportunity"], **{field: payload[field] for field in TEXT_FIELDS})
+        student_opportunity=payload["student_opportunity"], schema_version=SCHEMA_VERSION,
+        evidence_validation=tuple(replace(locate(supplied, e.quote, e.field), status="unverified") if e.quote else locate(supplied, e.quote, e.field) for e in evidence),
+        fact_status="review_required", **{field: payload[field] for field in TEXT_FIELDS})
     validate_output(supplied, result, analyzer)
     validate_output(notice, result, analyzer)
     return refresh_time(result, reference_time)

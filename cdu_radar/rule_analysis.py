@@ -55,6 +55,7 @@ def refresh_time(result,reference_time):
         elif status=="open" and start and start>now:status="upcoming"
     elif start and start>now:status="upcoming"
     decision="exclude" if status=="closed" else result.base_decision
+    if result.schema_version == "llm-screening-v2" and result.fact_status != "verified":decision="uncertain"
     return replace(result,opportunity_status=status,candidate_decision=decision,reference_time=now.isoformat(),
                    needs_manual_review=result.needs_manual_review or (status=="unknown" and result.base_decision!="exclude"))
 

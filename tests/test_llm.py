@@ -202,7 +202,7 @@ def test_version_changes_invalidate_model_prompt_schema_and_input_cache(store, c
     prompt = tmp_path/'prompt.txt'; prompt.write_text('保留证据。', encoding='utf-8')
     modified = LLMAnalyzer(replace(config, prompt_file=str(prompt)))
     assert modified.version != first.version
-    import cdu_radar.llm as module
+    import cdu_radar.llm_schema as module
     with monkeypatch.context() as branch:
         branch.setattr(module, 'SCHEMA_VERSION', 'synthetic-schema-v2')
         assert LLMAnalyzer(config).version != first.version
@@ -250,7 +250,9 @@ def test_cache_only_comparison_keeps_failures_and_reports_missing_coverage(store
     analyzer.provider.complete = no_call
     report = compare(repo, analyzer)
     assert report['comparison_complete'] and report['llm']['valid_labels'] == 2
-    assert report['llm']['failed_count'] == 1 and report['llm']['confusion_matrix']['fp'] == 1
+    assert report['llm']['failed_count'] == 1 and report['llm']['confusion_matrix'] is None
+    assert report['llm']['legacy_retention_metrics']['confusion_matrix']['fp'] == 1
+    assert report['llm']['system']['pending_due_to_model_failure'] == 1
     assert report['usage']['api_requests'] == 2 and not report['usage']['usage_complete']
     assert report['llm']['dimension_compared'] == {}
 
@@ -311,11 +313,15 @@ def test_batch_boundary_unknown_and_duplicate_ids(store, config):
 
 
 def test_v3_migration_keeps_v2_labels_and_reopens_without_downgrade(store, config):
-    seed(store); repo = AnalysisRepository(store); before = dict(store.feed_rows(1)[0])
+    ident = seed(store); repo = AnalysisRepository(store); before = dict(store.feed_rows(1)[0])
+    notice = repo.input(ident)
+    with repo.db:repo.add_label(ManualLabel(ident,notice.content_hash,notice.input_hash,'human','synthetic-test-user',worth_recommending=True))
+    labels_before = [tuple(r) for r in repo.db.execute('SELECT * FROM manual_labels')]
     LLMLedger(repo); path = store.db.execute('PRAGMA database_list').fetchone()[2]
     with Store(path) as reopened:
-        assert reopened.db.execute('PRAGMA user_version').fetchone()[0] == 3
+        assert reopened.db.execute('PRAGMA user_version').fetchone()[0] == 4
         assert dict(reopened.feed_rows(1)[0]) == before
+        assert [tuple(r) for r in reopened.db.execute('SELECT * FROM manual_labels')] == labels_before
         assert reopened.db.execute('PRAGMA foreign_key_check').fetchall() == []
 
 

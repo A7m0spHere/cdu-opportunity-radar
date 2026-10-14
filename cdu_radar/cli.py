@@ -76,7 +76,14 @@ def main(argv=None) -> int:
     llm_compare.add_argument("--output", type=Path, default=Path("data/m2b-comparison.json"))
     llm_compare.add_argument("--errors-output", type=Path)
     llm_compare.add_argument("--analysis-version", help="Explicit historical cache version; revalidate, never send")
-    for command in (llm_analyze, llm_compare):
+    llm_history = llm_actions.add_parser("history", help="Read original cached version without changing or revalidating it")
+    llm_history.add_argument("--analysis-version", required=True)
+    llm_history.add_argument("--output", type=Path, default=Path("data/m2b1-history.json"))
+    llm_diagnose = llm_actions.add_parser("diagnose", help="Offline diagnosis from local historical reports and cache")
+    llm_diagnose.add_argument("--comparison", type=Path, default=Path("data/m2b-comparison-revalidated.json"))
+    llm_diagnose.add_argument("--errors-report", type=Path, default=Path("data/m2b-errors-revalidated.json"))
+    llm_diagnose.add_argument("--output", type=Path, default=Path("data/m2b1-diagnosis.json"))
+    for command in (llm_analyze, llm_compare, llm_history, llm_diagnose):
         command.add_argument("--db", type=Path, default=Path("data/m2b.sqlite3"))
         command.add_argument("--notice-id", type=positive_int, action="append")
         command.add_argument("--as-of")

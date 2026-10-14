@@ -21,12 +21,21 @@ def llm_command(args):
         for path in outputs:
             if path.resolve() == args.db.resolve() or path.suffix.lower() != ".json": raise ValueError("LLM report must be a separate JSON file")
             if path.exists() and not args.overwrite: raise ValueError("Report exists; choose another output or --overwrite")
+            if args.llm_action == "diagnose" and path.resolve() in {args.comparison.resolve(), args.errors_report.resolve()}:
+                raise ValueError("Diagnosis must not overwrite historical reports")
+        if args.llm_action in {"diagnose", "history"}:
+            from .llm_diagnostics import diagnose, historical_results
+            with readonly_repository(args.db) as repository:
+                report = diagnose(repository, args.comparison, args.errors_report, reference_time=args.as_of) if args.llm_action == "diagnose" else historical_results(repository, args.analysis_version, args.notice_id)
+            atomic_text(args.output, json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(json.dumps({"output":str(args.output), "api_requests":0, "archive_only":report.get("archive_only",False)}, ensure_ascii=False))
+            return 0
         config = LLMConfig.from_env(); analyzer = LLMAnalyzer(config)
         point = reference_datetime(args.as_of)
         if args.llm_action == "compare":
             with readonly_repository(args.db) as repository:
                 if args.analysis_version:
-                    if not re.fullmatch(r"llm-v1:[a-f0-9]{24}", args.analysis_version): raise ValueError("Invalid historical analysis version")
+                    if not re.fullmatch(r"llm-v[12]:[a-f0-9]{24}", args.analysis_version): raise ValueError("Invalid historical analysis version")
                     row = repository.db.execute("SELECT model,prompt_version,schema_version FROM llm_requests WHERE analyzer_version=? LIMIT 1", (args.analysis_version,)).fetchone()
                     if row is None or tuple(row) != (analyzer.model_name, analyzer.prompt_version, analyzer.schema_version):
                         raise ValueError("Historical model/Prompt/Schema differs from selected configuration")

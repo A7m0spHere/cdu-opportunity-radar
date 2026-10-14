@@ -18,8 +18,10 @@ from .analysis_models import InputLink, fingerprint
 from .llm_schema import (OUTPUT_SCHEMA, PROMPT_VERSION, SCHEMA_VERSION,
                          SYSTEM_PROMPT, TEXT_FIELDS, coerce_result)
 from .llm_schema import validate_llm_dates
+from .llm_schema import SchemaValidationError
 from .models import utc_now
 from .privacy import sanitize
+from .evidence import locate
 
 
 SCHEMA_DETAILS = {
@@ -40,7 +42,23 @@ SCHEMA_DETAILS = {
     "Registration URL was not supplied": "unprovided_registration_url",
     "Deadline basis requires a deadline": "missing_deadline_basis",
     "Registration start basis requires a start": "missing_start_basis",
+    "Eligibility quote lacks the claimed qualification": "unsupported_eligibility",
+    "Participation quote contradicts the claimed opportunity": "unsupported_participation",
+    "Analyzer output identity mismatch": "identity_mismatch",
+    "LLM array exceeds bound": "invalid_type_or_enum",
+    "LLM field exceeds bound": "invalid_type_or_enum",
+    "Fact evidence requires a nonempty quote": "missing_critical_citation",
 }
+
+LOCATION_DETAILS = {"unlocatable_evidence"}
+SHAPE_DETAILS = {"invalid_type_or_enum", "missing_or_extra_fields", "unknown_evidence_field", "identity_mismatch"}
+
+
+def validation_stage(detail):
+    if detail in LOCATION_DETAILS:return "evidence_location"
+    if detail in SHAPE_DETAILS:return "schema"
+    if detail == "invalid_schema":return "unknown_unobservable"
+    return "fact_support"
 
 
 class LLMError(ValueError):
@@ -61,7 +79,11 @@ class LLMConfig:
     max_input_chars: int = 20000
     max_output_tokens: int = 4096
     batch_limit: int = 3
+    stop_after_format_failures: int = 2
     response_format: str = "json_object"
+    schema_mode: str = "detailed_v1"
+    protocol_profile: str = "generic"
+    output_token_parameter: str = "max_tokens"
     prompt_file: str | None = None
     input_price_per_million: float | None = None
     output_price_per_million: float | None = None
@@ -86,12 +108,16 @@ class LLMConfig:
                 raise ValueError("Invalid LLM numeric configuration")
         if self.timeout <= 0 or self.temperature is not None and self.temperature > 2:
             raise ValueError("Invalid timeout/temperature")
-        for name in ["retries", "max_input_chars", "max_output_tokens", "batch_limit"]:
+        for name in ["retries", "max_input_chars", "max_output_tokens", "batch_limit", "stop_after_format_failures"]:
             value = getattr(self, name)
             if type(value) is not int or value < (0 if name == "retries" else 1): raise ValueError("Invalid LLM limit")
         if self.retries > 3 or self.batch_limit > 100: raise ValueError("Retry/batch safety bound exceeded")
+        if self.stop_after_format_failures > 10:raise ValueError("Invalid format failure stop bound")
         if self.response_format not in {"json_schema", "json_object", "none"}: raise ValueError("Invalid response format mode")
         if self.thinking_mode not in {None, "enabled", "disabled"}: raise ValueError("Invalid optional thinking mode")
+        if self.schema_mode not in {"detailed_v1", "screening_v2"}:raise ValueError("Invalid schema mode")
+        if self.protocol_profile not in {"generic", "deepseek"}:raise ValueError("Invalid protocol profile")
+        if self.output_token_parameter not in {"max_tokens", "max_completion_tokens"}:raise ValueError("Invalid output token parameter")
         priced = [self.input_price_per_million is not None, self.output_price_per_million is not None]
         if any(priced) and (not all(priced) or not self.cost_currency): raise ValueError("Both prices and currency are required")
 
@@ -102,7 +128,7 @@ class LLMConfig:
         if not base or not model: raise ValueError("Set CDU_LLM_BASE_URL and CDU_LLM_MODEL")
         values = {"base_url": base, "model": model}
         converters = {"temperature": float, "timeout": float, "retries": int, "max_input_chars": int,
-                      "max_output_tokens": int, "batch_limit": int, "input_price_per_million": float,
+                      "max_output_tokens": int, "batch_limit": int, "stop_after_format_failures":int, "input_price_per_million": float,
                       "output_price_per_million": float}
         for name in cls.__dataclass_fields__:
             if name in {"base_url", "model"}: continue
@@ -113,7 +139,7 @@ class LLMConfig:
         return cls(**values)
 
     def identity(self):
-        names = ["base_url", "model", "temperature", "thinking_mode", "max_input_chars", "max_output_tokens", "response_format"]
+        names = ["base_url", "model", "temperature", "thinking_mode", "max_input_chars", "max_output_tokens", "response_format", "schema_mode", "protocol_profile", "output_token_parameter"]
         return {name: getattr(self, name) for name in names}
 
 
@@ -124,7 +150,8 @@ def strict_json(text):
             if key in result: raise ValueError("Duplicate JSON key")
             result[key] = value
         return result
-    return json.loads(text, object_pairs_hook=pairs)
+    def constant(_):raise ValueError("Non-finite JSON value")
+    return json.loads(text, object_pairs_hook=pairs, parse_constant=constant)
 
 
 def usage_values(body):
@@ -152,11 +179,14 @@ class ChatCompletionsProvider:
         config = self.config
         key = os.environ.get(config.key_env, "").strip()
         if not key: raise LLMError("missing_api_key")
-        payload = {"model": config.model, "messages": messages, "stream": False, "max_tokens": config.max_output_tokens}
-        if config.temperature is not None: payload["temperature"] = config.temperature
+        payload = {"model": config.model, "messages": messages, "stream": False, config.output_token_parameter: config.max_output_tokens}
+        if config.temperature is not None and not (config.protocol_profile == "deepseek" and config.thinking_mode == "enabled"): payload["temperature"] = config.temperature
         if config.thinking_mode is not None: payload["thinking"] = {"type": config.thinking_mode}
         if config.response_format == "json_schema":
-            payload["response_format"] = {"type": "json_schema", "json_schema": {"name": "notice_analysis", "strict": True, "schema": OUTPUT_SCHEMA}}
+            if config.schema_mode == "screening_v2":
+                from .llm_screening import OUTPUT_SCHEMA as schema
+            else:schema = OUTPUT_SCHEMA
+            payload["response_format"] = {"type": "json_schema", "json_schema": {"name": "notice_analysis", "strict": True, "schema": schema}}
         elif config.response_format == "json_object": payload["response_format"] = {"type": "json_object"}
         endpoint = config.base_url.rstrip("/") + "/chat/completions"
         with httpx.Client(timeout=config.timeout, follow_redirects=False, transport=self.transport) as client:
@@ -164,6 +194,14 @@ class ChatCompletionsProvider:
                 event = {"request_uid": uuid.uuid4().hex, "started_at": utc_now(), "attempt": attempt,
                          "status_code": None, "error_category": "started", "usage": None,
                          "estimated_cost": None, "currency": config.cost_currency, "elapsed_ms": 0}
+                diagnostic = {"request_ok": None, "json_ok": None, "schema_ok": None, "evidence_ok": None,
+                              "analysis_ok": None, "finish_reason": None, "content_chars": None, "reasoning_chars": None,
+                              "error_detail": None, "validation_stage": "transport", "json_style": None,
+                              "request_format": config.response_format, "thinking_mode": config.thinking_mode,
+                              "temperature_sent": "temperature" in payload, "output_token_parameter": config.output_token_parameter,
+                              "max_output_tokens": config.max_output_tokens, "timeout":config.timeout, "retries":config.retries,
+                              "schema_mode":config.schema_mode, "protocol_profile":config.protocol_profile}
+                event["diagnostic"] = diagnostic
                 if event_sink: event_sink(dict(event))  # Persist before spending a request.
                 started = time.monotonic()
                 error = None
@@ -173,6 +211,7 @@ class ChatCompletionsProvider:
                         if code != 200:
                             category = "authentication" if code == 401 else "forbidden" if code == 403 else "rate_limited" if code == 429 else "server_error" if code >= 500 else "http_error"
                             raise LLMError(category, code == 429 or code in {500, 502, 503, 504})
+                        diagnostic["request_ok"] = True
                         raw = bytearray()
                         for chunk in response.iter_bytes():
                             raw.extend(chunk)
@@ -181,25 +220,55 @@ class ChatCompletionsProvider:
                     except (ValueError, UnicodeError): raise LLMError("invalid_api_json") from None
                     if not isinstance(body, dict): raise LLMError("invalid_api_response")
                     event["usage"] = usage_values(body)
+                    diagnostic["returned_model_matches_config"] = body.get("model") == config.model if isinstance(body.get("model"), str) else None
+                    output_details = body.get("usage", {}).get("completion_tokens_details", {}) if isinstance(body.get("usage"), dict) else {}
+                    reasoning_tokens = output_details.get("reasoning_tokens") if isinstance(output_details, dict) else None
+                    if type(reasoning_tokens) is int and event["usage"] and 0 <= reasoning_tokens <= event["usage"]["completion_tokens"]:
+                        diagnostic["reasoning_tokens"] = reasoning_tokens
                     if event["usage"] and config.input_price_per_million is not None:
                         event["estimated_cost"] = (event["usage"]["prompt_tokens"] * config.input_price_per_million + event["usage"]["completion_tokens"] * config.output_price_per_million) / 1000000
                     choices = body.get("choices")
                     if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict): raise LLMError("missing_choices")
                     choice = choices[0]; message = choice.get("message")
                     if not isinstance(message, dict): raise LLMError("missing_message")
+                    finish = choice.get("finish_reason")
+                    diagnostic["finish_reason"] = finish if isinstance(finish, str) and finish in {"stop", "length", "content_filter", "tool_calls", "function_call", "insufficient_system_resource"} else "unknown"
+                    content = message.get("content")
+                    diagnostic["content_chars"] = len(content) if isinstance(content, str) else None
+                    diagnostic["reasoning_chars"] = len(message["reasoning_content"]) if isinstance(message.get("reasoning_content"), str) else None
+                    diagnostic["validation_stage"] = "final_content"
                     if message.get("refusal"): raise LLMError("model_refusal")
                     if message.get("tool_calls") or message.get("function_call"): raise LLMError("unexpected_tool_call")
                     if choice.get("finish_reason") != "stop": raise LLMError("incomplete_output")
-                    content = message.get("content")
                     if not isinstance(content, str) or not content.strip(): raise LLMError("no_final_text")
+                    diagnostic["validation_stage"] = "json"
+                    diagnostic["json_ok"] = False
+                    diagnostic["json_style"] = "markdown_fence" if content.lstrip().startswith("```") else "plain"
                     try: data = strict_json(content)
-                    except (ValueError, UnicodeError): raise LLMError("invalid_json") from None
+                    except (ValueError, UnicodeError) as exc:
+                        if isinstance(exc, json.JSONDecodeError):
+                            diagnostic.update(json_error_line=exc.lineno, json_error_column=exc.colno)
+                        raise LLMError("invalid_json") from None
+                    diagnostic.update(json_ok=True, validation_stage="schema")
                     try: result = validator(data)
                     except (ValueError, TypeError, KeyError) as exc:
-                        raise LLMError("schema_validation", detail=SCHEMA_DETAILS.get(str(exc), "invalid_schema")) from None
+                        if isinstance(exc, SchemaValidationError):
+                            diagnostic.update(schema_error_path=exc.path, missing_schema_fields=list(exc.missing_fields))
+                        detail = SCHEMA_DETAILS.get(str(exc), "invalid_schema")
+                        stage = validation_stage(detail)
+                        diagnostic.update(error_detail=detail, validation_stage=stage)
+                        if stage != "unknown_unobservable":diagnostic["schema_ok"] = stage != "schema"
+                        if stage == "evidence_location":diagnostic["evidence_ok"] = False
+                        elif stage == "fact_support":diagnostic["evidence_ok"] = True
+                        raise LLMError("schema_validation", detail=detail) from None
+                    diagnostic.update(schema_ok=True, evidence_ok=True, analysis_ok=True, validation_stage="complete")
+                    diagnostic["fact_status"] = getattr(result, "fact_status", "not_checked")
                 except httpx.TimeoutException: error = LLMError("timeout", True)
                 except httpx.RequestError: error = LLMError("connection", True)
                 except LLMError as exc: error = exc
+                if error:
+                    diagnostic["analysis_ok"] = False
+                    if diagnostic["request_ok"] is None:diagnostic["request_ok"] = False
                 event.update(error_category=error.category if error else None, elapsed_ms=round((time.monotonic() - started) * 1000))
                 if event_sink: event_sink(dict(event))
                 if error is None: return result
@@ -235,23 +304,28 @@ class LLMAnalyzer:
         self.event_sink = event_sink
         custom = Path(config.prompt_file).read_text(encoding="utf-8") if config.prompt_file else ""
         if re.search(r"\b(?:sk-|github_pat_|ghp_)[A-Za-z0-9_-]{20,}", custom): raise ValueError("Custom prompt contains credential-like data")
-        self.prompt = SYSTEM_PROMPT + ("\n补充任务说明：\n" + custom if custom else "")
-        self.prompt_version = PROMPT_VERSION + ":" + fingerprint(self.prompt)[:12]
-        self.schema_version = SCHEMA_VERSION + ":" + fingerprint(OUTPUT_SCHEMA)[:12]
+        if config.schema_mode == "screening_v2":
+            from . import llm_screening as contract
+        else:
+            from . import llm_schema as contract
+        self.contract = contract
+        self.prompt = contract.SYSTEM_PROMPT + ("\n补充任务说明：\n" + custom if custom else "")
+        self.prompt_version = contract.PROMPT_VERSION + ":" + fingerprint(self.prompt)[:12]
+        self.schema_version = contract.SCHEMA_VERSION + ":" + fingerprint(contract.OUTPUT_SCHEMA)[:12]
         implementation = [files("cdu_radar").joinpath(name).read_text(encoding="utf-8").replace("\r\n", "\n")
-                          for name in ["llm.py", "llm_schema.py", "analysis_service.py", "analysis_models.py", "privacy.py"]]
-        self.version = "llm-v1:" + fingerprint([config.identity(), self.prompt, PROMPT_VERSION, SCHEMA_VERSION, OUTPUT_SCHEMA, implementation])[:24]
+                          for name in ["llm.py", "llm_schema.py", "llm_screening.py", "llm_semantics.py", "evidence.py", "analysis_service.py", "analysis_models.py", "rule_analysis.py", "rules.json", "privacy.py"]]
+        self.version = ("llm-v2:" if config.schema_mode == "screening_v2" else "llm-v1:") + fingerprint([config.identity(), self.prompt, self.prompt_version, self.schema_version, contract.OUTPUT_SCHEMA, implementation])[:24]
 
     def prepare(self, notice):
         supplied = replace(notice, title=external_text(notice.title, False), content=external_text(notice.content),
             sources=tuple(external_text(s) for s in notice.sources), content_source=external_text(notice.content_source) if notice.content_source else None,
             attachments=tuple(InputLink(external_text(a.name), external_url(a.url)) for a in notice.attachments),
             body_links=tuple(InputLink(external_text(a.name), external_url(a.url)) for a in notice.body_links))
-        if not re.sub(r"(?m)^\[[^\]\r\n]*已移除\]\s*$", "", supplied.content).strip(): raise LLMError("empty_body")
+        if self.config.schema_mode == "detailed_v1" and not re.sub(r"(?m)^\[[^\]\r\n]*已移除\]\s*$", "", supplied.content).strip(): raise LLMError("empty_body")
         values = {name: getattr(supplied, name) for name in ["notice_id", "title", "content", "canonical_url", "published_at", "sources", "content_source"]}
         values.update(body_links=[asdict(a) for a in supplied.body_links], attachments=[asdict(a) for a in supplied.attachments],
                       attachments_content_available=False, link_query_parameters_removed=True)
-        messages = [{"role": "system", "content": self.prompt + "\nJSON Schema：\n" + json.dumps(OUTPUT_SCHEMA, ensure_ascii=False)},
+        messages = [{"role": "system", "content": self.prompt + "\nJSON Schema：\n" + json.dumps(self.contract.OUTPUT_SCHEMA, ensure_ascii=False)},
                     {"role": "user", "content": json.dumps({"untrusted_notice": values}, ensure_ascii=False)}]
         if sum(len(m["content"]) for m in messages) > self.config.max_input_chars: raise LLMError("input_too_long")
         return supplied, messages
@@ -259,10 +333,14 @@ class LLMAnalyzer:
     def analyze(self, notice, *, reference_time):
         supplied, messages = self.prepare(notice)
         sink = (lambda event: self.event_sink(notice, self, event)) if self.event_sink else None
-        return self.provider.complete(messages, lambda payload: coerce_result(payload, notice, supplied, self, reference_time), event_sink=sink)
+        coercer = self.contract.coerce_screening if self.config.schema_mode == "screening_v2" else coerce_result
+        return self.provider.complete(messages, lambda payload: coercer(payload, notice, supplied, self, reference_time), event_sink=sink)
 
     def validate_cached(self, notice, result):
         supplied, _ = self.prepare(notice)
+        if self.config.schema_mode == "screening_v2":
+            from .llm_screening import validate_cached_screening
+            return validate_cached_screening(notice, supplied, result, self)
         payload = {name: getattr(result, name) for name in TEXT_FIELDS}
         for name in ["category", "relevance_level", "eligibility_status", "ai_use_policy", "student_opportunity", "needs_manual_review", "status_basis"]:
             payload[name] = getattr(result, name)

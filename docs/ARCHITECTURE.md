@@ -1,5 +1,11 @@
 # 系统结构
 
+## M2-B.1 离线诊断增量
+
+`evidence` 只做 NFC/空白规范化和原文位置映射；`llm_semantics` 保守检查关键事实支持；`llm_screening` 提供显式可选的 llm-screening-v2 初筛契约；`llm_diagnostics` 只读历史报告与缓存，不重建缺失响应。NoticeAnalysis 的新增 Schema、fact_status 和证据评估字段都有兼容旧缓存的缺省值。
+
+发送路径在 user_version=4 增加独立 llm_request_diagnostics，不改原台账列和人工真值。阶段诊断只存计数、位置和白名单状态；原始响应/推理仍不保存。本轮实际库只读，没有触发迁移。compare 分技术、业务和系统指标，旧候选指标仅留档；history 原样查看旧版本，diagnose 无需 Provider 配置。完整边界与离线证据见 [M2B1_OFFLINE.md](M2B1_OFFLINE.md)。
+
 ## M2-B 增量模型接口
 
 `llm` 使用 httpx Chat Completions Provider，Provider 协议可替换；`llm_schema` 维护固定 Prompt/JSON Schema 和引用/日期用途校验；`llm_workflow` 处理追加的请求台账、小批量执行和只读缓存对照；`llm_cli` 是原 CLI 的薄适配。没有重建采集器、引入模型框架或发布模块。

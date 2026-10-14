@@ -72,6 +72,20 @@ def main(argv=None) -> int:
     approved.add_argument('--output',type=Path,default=Path('data/approved.xml'))
     approved.add_argument('--confirm')
     approved.add_argument('--dry-run',action='store_true',help='Read-only preview; incompatible with --confirm')
+    rss_server=sub.add_parser('serve-approved-rss',help='Loopback RSS only; safe background refresh of existing approvals')
+    rss_server.add_argument('--db',type=Path,required=True)
+    rss_server.add_argument('--state-dir',type=Path,required=True,help='Exclusive private service cache; never served as a directory')
+    rss_server.add_argument('--bind',default='127.0.0.1')
+    rss_server.add_argument('--port',type=int,default=8765)
+    rss_server.add_argument('--interval',type=float,default=10)
+    rss_server.add_argument('--max-age',type=float,default=30)
+    synthetic=sub.add_parser('rss-synthetic',help='Separate synthetic-only lab; never uses existing user data')
+    synthetic_actions=synthetic.add_subparsers(dest='synthetic_action',required=True)
+    for name in ['init','add','revoke','update','approve']:
+        action=synthetic_actions.add_parser(name)
+        action.add_argument('--directory',type=Path,required=True)
+        if name in {'revoke','update','approve'}:action.add_argument('notice_id',type=positive_int)
+        if name in {'init','add','approve'}:action.add_argument('--ttl',type=positive_int,default=3600)
     llm = sub.add_parser("llm", help="Bounded model analysis and cache-only comparison")
     llm_actions = llm.add_subparsers(dest="llm_action", required=True)
     llm_analyze = llm_actions.add_parser("analyze", help="Default: preview only; --send explicitly spends API requests")
@@ -98,6 +112,12 @@ def main(argv=None) -> int:
         command.add_argument("--as-of")
         command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
+    if args.command=='serve-approved-rss':
+        from .rss_service import serve_command
+        return serve_command(args)
+    if args.command=='rss-synthetic':
+        from .rss_synthetic import synthetic_command
+        return synthetic_command(args)
     if args.command=='export-approved-rss' or args.command=='review' and args.review_action!='set':
         if getattr(args,'dry_run',False) and getattr(args,'confirm',None):parser.error('--dry-run cannot be combined with --confirm')
         from .publication_cli import publication_command

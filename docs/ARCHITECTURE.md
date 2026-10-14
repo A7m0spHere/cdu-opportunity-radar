@@ -1,5 +1,15 @@
 # 系统结构
 
+## M2-B 增量模型接口
+
+`llm` 使用 httpx Chat Completions Provider，Provider 协议可替换；`llm_schema` 维护固定 Prompt/JSON Schema 和引用/日期用途校验；`llm_workflow` 处理追加的请求台账、小批量执行和只读缓存对照；`llm_cli` 是原 CLI 的薄适配。没有重建采集器、引入模型框架或发布模块。
+
+NoticeAnalysis 只追加可空 student_opportunity，旧缓存和规则结果保持兼容。分析失败保存安全类别、候选不排除；缓存损坏或模型证据不匹配时可重试，不能清空原文。时间由本机按人工参考点重算，版本包含 Prompt/Schema/模型/服务/分析参数及实现指纹。人工标签不发给模型，人工审核历史独立。
+
+仅发送时创建 user_version=3 的 llm_requests，发送前保存 started，结束后更新请求状态、已知 Token 和可估费用。使用独立 M2-B 数据库副本，原 M2-A 及其 36 条标签不变。预览/compare 用只读连接，不迁移数据库、不发送请求；模型缓存未覆盖全部标签时主指标留空，失败仍保留在同一评测样本集。
+
+完整配置、失败分类和对照口径见 LLM.md。无工具、附件正文、自动批准、正式 Feed 或群推送；原 RSS GUID 与存储机制不变。
+
 ## M2-A 独立分析与人工评测
 
 保留既有采集和 RSS 模块；新增 `analysis_models` 的类型化输入/分析/标签/证据，`rule_analysis` 可配置规则，`analysis_store` 追加缓存、标签和审核历史，`analysis_service` 控制版本与权限，`labels` 和 `evaluation` 提供人工 CSV 和离线指标。没有模型 SDK、网络调用或发布服务。

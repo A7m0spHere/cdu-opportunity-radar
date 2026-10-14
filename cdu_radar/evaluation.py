@@ -6,11 +6,14 @@ from .analysis_service import analyze_one
 from .rule_analysis import RuleAnalyzer
 
 
-def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=False,min_samples=30):
+def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=False,min_samples=30,
+             notice_ids=None,prediction_reader=None):
     analyzer=analyzer or RuleAnalyzer();fixed_reference=reference_time is not None;now=reference_datetime(reference_time)
     matrix={"tp":0,"fp":0,"fn":0,"tn":0};errors=[];by_category=Counter();uncertain=0;valid=0;unlabeled=0;stale_date=0;synthetic=0;stale_time=0;untimed=0
-    dimensions=Counter();comparisons=Counter()
-    for notice_id in repository.ids():
+    dimensions=Counter();comparisons=Counter();predictions=[];missing=0;failed=0;positive_truth=0;negative_truth=0
+    ids=repository.ids() if notice_ids is None else list(notice_ids)
+    if len(set(ids))!=len(ids) or not set(ids)<=set(repository.ids()):raise ValueError("Invalid evaluation notice ids")
+    for notice_id in ids:
         notice=repository.input(notice_id);truth=repository.latest_label(notice)
         if truth is None and include_synthetic:truth=repository.latest_label(notice,"synthetic")
         if truth is None or truth.worth_recommending is None:unlabeled+=1;continue
@@ -18,11 +21,17 @@ def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=Fa
         if fixed_reference and truth.reference_date and truth.reference_date!=point.date().isoformat():stale_date+=1;continue
         if fixed_reference and truth.reference_time and reference_datetime(truth.reference_time)!=point:stale_time+=1;continue
         if truth.reference_time is None:untimed+=1
-        prediction,_=analyze_one(repository,notice_id,analyzer,point);valid+=1
+        valid+=1;positive_truth+=truth.worth_recommending is True;negative_truth+=truth.worth_recommending is False
         synthetic+=truth.label_origin=="synthetic"
+        prediction=prediction_reader(notice_id,point) if prediction_reader else analyze_one(repository,notice_id,analyzer,point)[0]
+        if prediction is None:
+            missing+=1;predictions.append({"notice_id":notice_id,"truth":truth.worth_recommending,"decision":None,"state":"not_analyzed"})
+            continue
+        failed+=prediction.analysis_state=="failed"
+        predictions.append({"notice_id":notice_id,"truth":truth.worth_recommending,"decision":prediction.candidate_decision,"state":prediction.analysis_state})
         uncertain+=prediction.candidate_decision=="uncertain"
         # High-recall prefilter: uncertain remains a candidate, not a published recommendation.
-        positive=prediction.candidate_decision!="exclude"
+        positive=prediction.analysis_state=="failed" or prediction.candidate_decision!="exclude"
         key="tp" if positive and truth.worth_recommending else "fp" if positive else "fn" if truth.worth_recommending else "tn"
         matrix[key]+=1;types=[]
         if key=="fn":types.append("missed_opportunity")
@@ -40,7 +49,7 @@ def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=Fa
             if truth.deadline_explicit!=bool(explicit):types.append("deadline_presence_error");dimensions["deadline_presence_error"]+=1
         if truth.student_opportunity is not None:
             comparisons["student_activity_error"]+=1
-            predicted_activity=prediction.category not in {"news","administrative","unknown"} and prediction.eligibility_status!="ineligible"
+            predicted_activity=prediction.student_opportunity if prediction.student_opportunity is not None else prediction.category not in {"news","administrative","unknown"} and prediction.eligibility_status!="ineligible"
             if truth.student_opportunity!=predicted_activity:types.append("student_activity_error");dimensions["student_activity_error"]+=1
         if types:
             category=truth.category or "unlabeled_category";by_category[category]+=1
@@ -54,7 +63,12 @@ def evaluate(repository,*,analyzer=None,reference_time=None,include_synthetic=Fa
         "analyzer_version":analyzer.version,"metric_target":"candidate_retention (retain + uncertain), not approval",
         "valid_labels":valid,"human_labels":valid-synthetic,"synthetic_labels":synthetic,"unlabeled_or_incomplete":unlabeled,"reference_date_mismatches":stale_date,
         "reference_time_mismatches":stale_time,"labels_without_exact_time":untimed,
-        "precision":precision,"recall":recall,"f1":f1,"confusion_matrix":matrix,"uncertain_ratio":uncertain/valid if valid else None,
+        "positive_labels":positive_truth,"negative_labels":negative_truth,
+        "precision":precision if not missing else None,"recall":recall if not missing else None,"f1":f1 if not missing else None,
+        "confusion_matrix":matrix if not missing else None,"partial_confusion_matrix":matrix if missing else None,
+        "uncertain_count":uncertain,"uncertain_ratio":uncertain/valid if valid else None,
+        "failed_count":failed,"failure_ratio":failed/valid if valid else None,"not_analyzed_count":missing,
+        "metrics_complete":not missing,"predictions":predictions,
         "errors_by_category":dict(by_category),"dimension_errors":dict(dimensions),"dimension_compared":dict(comparisons),"error_samples":errors,
         "sample_sufficient":valid>=min_samples,"warning":"没有有效人工标签，无法评估真实效果" if valid==0 else "样本不足，仅供开发评测" if valid<min_samples else "本地样本评测不等于生产验收",
         "production_validated":False,"evaluation_origin":"synthetic_included" if synthetic else "human_only"}

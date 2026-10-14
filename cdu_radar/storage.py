@@ -151,6 +151,8 @@ class Store:
             self.db.execute("""INSERT INTO notice_sources (notice_id,source_id,first_seen_at,last_seen_at,published_at) VALUES (?,?,?,?,?)
                 ON CONFLICT(notice_id,source_id) DO UPDATE SET last_seen_at=excluded.last_seen_at,published_at=excluded.published_at""",
                 (notice_id, source_id, now, now, discovery_published_at or article.published_at))
+            from .publication import source_updated
+            source_updated(self.db,notice_id,now)
         return result
 
     def request_event(self, source_id, url, requested_at, attempt, status_code, error, elapsed_ms):

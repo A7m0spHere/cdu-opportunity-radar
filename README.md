@@ -1,8 +1,8 @@
 # cdu-opportunity-radar
 
-成都大学官方通知采集器。M1 支持来源登记、受控采集和 SQLite/RSS；M2-A 支持规则预筛、人工标注及评测；M2-B 增加受控 OpenAI-compatible 模型分析和缓存对照评测。采集、存储、分析和发布独立，不依赖 AstrBot API。
+成都大学官方通知采集器。M1 支持来源登记、受控采集和 SQLite/RSS；M2-A 支持规则预筛、人工标注及评测；M2-B 增加受控模型分析和字段事实审计；M2-C 增加本地人工发布审批和独立已批准 RSS。采集、存储、预测、评测标签和发布审批独立，不依赖 AstrBot API。
 
-**当前 Feed 仍是原始技术验证 Feed**，包括获奖新闻和普通通知；规则或模型预测不会自动改变 Feed 或批准发布。模型只在配置有效且显式 --send 时调用，没有 QQ 群订阅或公开发布。复杂日期语义、赛事级转载去重和完整学院采集仍属于后续阶段。
+**原始 Feed 仍是技术验证 Feed**，包括获奖新闻和普通通知；`approved.xml` 则只包含当前有效、明确人工批准的内容。规则预测、模型结果、推荐标签和旧分析审核不会自动发布。模型只在配置有效且显式 --send 时调用，目前没有 QQ 群订阅或公网部署。
 
 ## 安装
 
@@ -22,6 +22,21 @@ python3 -m venv .venv
 ```
 
 ## 本地运行
+
+### M2-C 人工审核与已批准 RSS
+
+无需模型或 Key。管理员查看原文及已有证据，填写独立草稿，先预览再用具体指纹确认。原文版本变化后批准失效，重新入队；重复导出保留 GUID 和首次发布时间。未知资格/日期/AI 规则明确保留，不能变成已核实断言。
+
+```powershell
+.\.venv\Scripts\python.exe -m cdu_radar review list --db data/m2c.sqlite3
+.\.venv\Scripts\python.exe -m cdu_radar review show 34 --db data/m2c.sqlite3
+.\.venv\Scripts\python.exe -m cdu_radar review history 34 --db data/m2c.sqlite3
+.\.venv\Scripts\python.exe -m cdu_radar export-approved-rss --db data/m2c.sqlite3 --output data/approved.xml --dry-run
+```
+
+本机 `data/m2c.sqlite3` 是保留历史数据的备份副本，已迁移至 v5；历史 36 条未批准，实际 `approved.xml` 是合法空 Feed。新环境先准备自己的采集库/副本。完整批准、拒绝、暂缓、撤销、草稿与确认步骤见 [发布指南](docs/PUBLICATION.md)，离线证据见 [M2-C 验收](docs/M2C_RESULTS.md)，未来测试群方案见 [AstrBot 交接](docs/ASTRBOT_HANDOFF.md)。合成 [RSS 示例](docs/examples/approved-example.xml) 不代表真实发布。
+
+只有显式 `--confirm` 才修改审批或写正式 XML。旧 `review set --confirm` 保留为分析审核，不能出版；review list 现为发布队列，不自动重新分析。不要把原始 feed.xml 交给正式订阅器，也不要直接公开整个 data 目录。静态 Feed 需要在源内容/审批变更和到期后重新导出；本轮没有部署刷新服务。
 
 ### M2-B 模型分析
 

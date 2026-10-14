@@ -53,16 +53,25 @@ def main(argv=None) -> int:
     review=sub.add_parser("review",help="Manual review history, independent of predictions")
     review_actions=review.add_subparsers(dest="review_action",required=True)
     review_list=review_actions.add_parser("list")
+    review_list.add_argument('--all',action='store_true',help='Include approved, rejected and revoked publication decisions')
+    from .publication_cli import register_review
+    register_review(review_actions)
     review_set=review_actions.add_parser("set")
     review_set.add_argument("--notice-id",type=positive_int,required=True)
     review_set.add_argument("--status",choices=["pending","approved","rejected"],required=True)
     review_set.add_argument("--reason",required=True)
     review_set.add_argument("--reviewer",required=True)
+    review_set.add_argument('--confirm',action='store_true',help='Confirm legacy analysis-only review; never publishes RSS')
     for command in (analysis,label_export,label_import,evaluation,review_list,review_set):
         command.add_argument("--db",type=Path,default=Path("data/m2a.sqlite3"))
     for command in (analysis,label_export,evaluation,review_list):
         command.add_argument("--rules",type=Path)
         command.add_argument("--as-of",help="YYYY-MM-DD or timestamp with timezone; interpreted in Asia/Shanghai")
+    approved=sub.add_parser('export-approved-rss',help='Preview effective approvals; --confirm PLAN_HASH writes independent RSS')
+    approved.add_argument('--db',type=Path,default=Path('data/m2a.sqlite3'))
+    approved.add_argument('--output',type=Path,default=Path('data/approved.xml'))
+    approved.add_argument('--confirm')
+    approved.add_argument('--dry-run',action='store_true',help='Read-only preview; incompatible with --confirm')
     llm = sub.add_parser("llm", help="Bounded model analysis and cache-only comparison")
     llm_actions = llm.add_subparsers(dest="llm_action", required=True)
     llm_analyze = llm_actions.add_parser("analyze", help="Default: preview only; --send explicitly spends API requests")
@@ -89,6 +98,13 @@ def main(argv=None) -> int:
         command.add_argument("--as-of")
         command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
+    if args.command=='export-approved-rss' or args.command=='review' and args.review_action!='set':
+        if getattr(args,'dry_run',False) and getattr(args,'confirm',None):parser.error('--dry-run cannot be combined with --confirm')
+        from .publication_cli import publication_command
+        return publication_command(args)
+    if args.command=='review' and args.review_action=='set' and not args.confirm:
+        print(json.dumps({'preview':True,'scope':'legacy_analysis_only','notice_id':args.notice_id,'status':args.status,
+            'reason':args.reason,'reviewer':args.reviewer,'confirmation_required':'--confirm','publishes_rss':False},ensure_ascii=False));return 0
     if args.command == "llm":
         from .llm_cli import llm_command
         return llm_command(args)

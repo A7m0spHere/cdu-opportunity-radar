@@ -135,7 +135,10 @@ def test_diagnostics_capture_stages_without_retaining_content(store,config,mode)
         assert d["schema_ok"] is False
         assert d["schema_error_path"] == "$" and d["missing_schema_fields"] == ["category"]
     if mode == "missing_quote":assert d["schema_ok"] is True and d["evidence_ok"] is False
-    if mode == "markdown":assert d["json_style"] == "markdown_fence" and not d["json_ok"]
+    if mode == "markdown":
+        assert d["json_style"] == "markdown_fence" and d["json_ok"]
+        assert d["parse_method"] == "normalized_markdown_fence" and d["direct_json_ok"] is False
+        assert d["schema_ok"] is False  # A normalized empty Object still fails the contract.
 
 
 def test_protocol_configuration_and_version_isolation(store,config):

@@ -2,12 +2,10 @@
 from contextlib import contextmanager
 import sqlite3
 
-from .analysis_models import reference_datetime
 from .analysis_service import analyze_one, validate_output
 from .analysis_store import AnalysisRepository
 from .evaluation import evaluate
 from .llm import LLMError
-from .llm_schema import PROMPT_VERSION, SCHEMA_VERSION
 from .rule_analysis import RuleAnalyzer, refresh_time
 from .storage import Store
 
@@ -51,7 +49,7 @@ def readonly_repository(path):
     finally: db.close()
 
 
-def select_ids(repository, analyzer, *, notice_ids=None, limit=3, only_unanalyzed=True):
+def select_ids(repository, analyzer, *, notice_ids=None, limit=3, only_unanalyzed=True,retry_failed=False):
     if type(limit) is not int or not 0 < limit <= analyzer.config.batch_limit: raise ValueError("Limit exceeds configured batch limit")
     ids = repository.ids() if notice_ids is None else list(notice_ids)
     if len(ids) != len(set(ids)) or not set(ids) <= set(repository.ids()): raise ValueError("Unknown or duplicate notice id")
@@ -62,6 +60,7 @@ def select_ids(repository, analyzer, *, notice_ids=None, limit=3, only_unanalyze
             notice = repository.input(notice_id)
             try:
                 cached = repository.cached(notice, analyzer.version)
+                if cached and cached.analysis_state == "failed" and not retry_failed: continue
                 if cached and cached.analysis_state == "success":
                     validate_output(notice, cached, analyzer); analyzer.validate_cached(notice, cached)
                     continue
@@ -86,6 +85,7 @@ def preview_batch(repository, analyzer, ids):
 
 def run_batch(repository, analyzer, ids, *, reference_time=None):
     if len(ids) > analyzer.config.batch_limit: raise ValueError("Batch limit exceeded")
+    if len(set(ids)) != len(ids) or not set(ids) <= set(repository.ids()): raise ValueError("Unknown or duplicate notice id")
     results = []; cache_hits = 0; stopped = False
     for notice_id in ids:
         result, cached = analyze_one(repository, notice_id, analyzer, reference_time)
@@ -139,6 +139,11 @@ def compare(repository, analyzer, *, notice_ids=None, reference_time=None):
                      notice_ids=ids, prediction_reader=rules_reader)
     llm = evaluate(repository, analyzer=analyzer, reference_time=reference_time,
                    notice_ids=ids, prediction_reader=llm_reader)
+    for report in [rules, llm]:
+        report["dimension_metrics"] = {
+            key: {"compared": report["dimension_compared"].get(key, 0),
+                  "errors": report["dimension_errors"].get(key, 0) if report["dimension_compared"].get(key, 0) else None}
+            for key in ["eligibility_error", "ai_policy_error", "registration_time_error", "internal_time_error", "time_status_error"]}
     rule_by_id = {r["notice_id"]: r for r in rules["predictions"]}
     corrected = []; regressed = []
     for prediction in llm["predictions"]:

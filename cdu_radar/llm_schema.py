@@ -1,5 +1,6 @@
 """Fixed model contract; trusted code owns identities, time and approvals."""
 from datetime import datetime
+import re
 
 from .analysis_models import (CATEGORIES, RELEVANCE, ELIGIBILITY, POLICIES,
                               DECISIONS, Evidence, NoticeAnalysis)
@@ -61,6 +62,69 @@ PROPERTIES["evidence"]["items"]["properties"]["field"] = enum(set(PROPERTIES) | 
 OUTPUT_SCHEMA = {"type": "object", "additionalProperties": False,
                  "properties": PROPERTIES, "required": list(PROPERTIES)}
 
+DATE_ROLES = {
+    "internal_deadline": FIELDS["internal_deadline"],
+    "registration_deadline": re.compile(r"报名[^。；\n]{0,50}(?:截止|截至)|最终截止|主办方截止|征集[^。；\n]{0,30}(?:截止|截至)|提交截止"),
+    "registration_start_date": re.compile(r"报名开始|开始报名|报名启动"),
+    "internal_event_date": re.compile(r"(?:校内|院级|校级|学院)[^。；\n]{0,30}(?:选拔|答辩)"),
+    "event_start_date": re.compile(r"比赛|初赛|决赛|活动|讲座|举办|举行|开赛"),
+}
+SHARED_YEAR_RANGE = re.compile(r"(20\d{2})[年./-](\d{1,2})[月./-](\d{1,2})日?\s*(?:至|到|—|~)\s*(\d{1,2})[月./-](\d{1,2})日?")
+
+
+def quoted_dates(text):
+    values = set(); ranges = []
+    for match in DATE.finditer(text):
+        y, m, d, h, minute = match.groups()
+        stamp = datetime(int(y), int(m), int(d), int(h or 0), int(minute or 0))
+        values.add(stamp.isoformat() + "+08:00" if h else stamp.date().isoformat())
+    for match in SHARED_YEAR_RANGE.finditer(text):
+        y, m, d, end_m, end_d = map(int, match.groups())
+        start, end = datetime(y, m, d).date(), datetime(y, end_m, end_d).date()
+        if end < start: continue  # Never guess rollover years/months.
+        pair = (start.isoformat(), end.isoformat()); ranges.append(pair); values.update(pair)
+    return values, ranges
+
+
+def citation_context(notice, quote):
+    """Locate literal citations in body clauses; never search publication metadata."""
+    contexts = []
+    for clause in re.split(r"[\n。；]", notice.content):
+        if quote in clause:
+            index = clause.index(quote)
+            contexts.append(clause[max(0, index - 70):index + len(quote) + 90])
+    return contexts or [quote]
+
+
+def validate_llm_dates(notice, result):
+    """LLM citations may use narrative event wording, but never metadata dates."""
+    by_field = {}
+    date_fields = [*FIELDS, "event_end_date"]
+    for e in result.evidence:
+        if e.field not in date_fields or e.kind != "fact": continue
+        # A quoted partial calendar date can be factual while its normalized value is unknown.
+        if e.value is None and getattr(result, e.field) is None: continue
+        expected = "event_start_date" if e.field == "event_end_date" else e.field
+        contexts = citation_context(notice, e.quote)
+        roles = {next((name for name, pattern in DATE_ROLES.items() if pattern.search(context)), None) for context in contexts}
+        dates, ranges = quoted_dates(e.quote)
+        if any(re.search(r"发布时间|发布日期|发布于", context) for context in contexts) or roles != {expected}:
+            raise ValueError("Date evidence must preserve quoted value and purpose")
+        if e.value not in dates:
+            # A literal partial date is evidence of a date mention, not a normalized year.
+            if getattr(result, e.field) is None and e.value and e.value in e.quote and re.fullmatch(r"\d{1,2}月\d{1,2}日", e.value): continue
+            raise ValueError("Date evidence must preserve quoted value and purpose")
+        if ranges and e.field in {"event_start_date", "event_end_date"}:
+            index = 0 if e.field == "event_start_date" else 1
+            if e.value not in {pair[index] for pair in ranges}: raise ValueError("Date evidence must preserve quoted value and purpose")
+        by_field.setdefault(e.field, set()).update(dates)
+    for field in date_fields:
+        value = getattr(result, field)
+        if value and not any(e.field == field and e.kind == "fact" and e.value == value for e in result.evidence):
+            raise ValueError("Date value lacks a matching role-labelled fact quote")
+        if field not in {"event_start_date", "event_end_date"} and len(by_field.get(field, set())) > 1 and value is not None:
+            raise ValueError("Multiple dates cannot become a single deadline/start date")
+
 
 def validate_schema(value, schema=OUTPUT_SCHEMA):
     """Validate the deliberately small JSON Schema subset used by this contract."""
@@ -79,6 +143,24 @@ def validate_schema(value, schema=OUTPUT_SCHEMA):
 
 
 def coerce_result(payload, notice, supplied, analyzer, reference_time):
+    if not isinstance(payload, dict): raise ValueError("Invalid LLM schema type or enum")
+    payload = dict(payload)
+    # Unknown optional strings have the same meaning whether omitted or explicitly null.
+    for field in TEXT_FIELDS: payload.setdefault(field, None)
+    if isinstance(payload.get("evidence"), list):
+        normalized = []
+        for entry in payload["evidence"]:
+            if not isinstance(entry, dict): normalized.append(entry); continue
+            entry = dict(entry); entry.setdefault("value", None)
+            if type(entry["value"]) is bool: entry["value"] = str(entry["value"]).lower()
+            if entry.get("field") in [*FIELDS, "event_end_date"] and isinstance(entry["value"], str):
+                literal = DATE.fullmatch(entry["value"])
+                if literal:
+                    y, m, d, h, minute = literal.groups()
+                    stamp = datetime(int(y), int(m), int(d), int(h or 0), int(minute or 0))
+                    entry["value"] = stamp.isoformat() + "+08:00" if h else stamp.date().isoformat()
+            normalized.append(entry)
+        payload["evidence"] = normalized
     validate_schema(payload)
     evidence = tuple(Evidence(**e) for e in payload["evidence"])
     if not payload["analysis_reason"] or not evidence: raise ValueError("Missing analysis reasons/evidence")
@@ -91,17 +173,6 @@ def coerce_result(payload, notice, supplied, analyzer, reference_time):
     if any(e.quote and e.quote not in source_text for e in evidence):
         raise ValueError("Unlocatable evidence")
     rules = RuleAnalyzer()
-    for e in evidence:
-        expected = "event_start_date" if e.field == "event_end_date" else e.field
-        if expected not in FIELDS or e.kind != "fact": continue
-        detected = next((name for name, pattern in FIELDS.items() if pattern.search(e.quote)), None)
-        quoted_dates = set()
-        for match in DATE.finditer(e.quote):
-            y, m, d, h, minute = match.groups()
-            stamp = datetime(int(y), int(m), int(d), int(h or 0), int(minute or 0))
-            quoted_dates.add(stamp.isoformat() + "+08:00" if h else stamp.date().isoformat())
-        if detected != expected or e.value is None or e.value not in quoted_dates:
-            raise ValueError("Date evidence must preserve quoted value and purpose")
     for field, known in [("eligibility_status", {"eligible", "ineligible"}),
                          ("ai_use_policy", {"explicitly_allowed", "partially_allowed", "explicitly_prohibited"}),
                          ("student_opportunity", {True, False})]:
@@ -115,25 +186,19 @@ def coerce_result(payload, notice, supplied, analyzer, reference_time):
                 if not any(rules.match(group, e.quote) for e in facts):
                     raise ValueError("AI policy quote lacks the claimed permission/prohibition")
     for field in ["organizer", "registration_url"]:
-        if payload[field] and not any(e.field == field and e.kind == "fact" and e.value == payload[field] for e in evidence):
+        if payload[field] and not any(e.field == field and e.kind == "fact" and
+                                      (e.value == payload[field] or payload[field] in e.quote) for e in evidence):
             raise ValueError("Critical value lacks factual citation")
     if payload["organizer"] and payload["organizer"] not in supplied.content:
         raise ValueError("Organizer not supplied")
+    if payload["registration_url"]:
+        original_urls = {link.url for link in notice.body_links} | set(re.findall(r"https?://[^\s<>，。；]+", notice.content))
+        if payload["registration_url"] not in original_urls:
+            raise ValueError("Registration URL was not supplied")
     if payload["status_basis"] == "explicit_closed" and not any(
         e.field == "opportunity_status" and e.kind == "fact" and rules.match("closed", e.quote) for e in evidence
     ): raise ValueError("Closed status lacks explicit evidence")
-    for field in FIELDS:
-        if field == "event_start_date": continue
-        dates = set()
-        for e in evidence:
-            if e.field != field or e.kind != "fact": continue
-            for match in DATE.finditer(e.quote):
-                y, m, d, h, minute = match.groups()
-                stamp = datetime(int(y), int(m), int(d), int(h or 0), int(minute or 0))
-                dates.add(stamp.isoformat() + "+08:00" if h else stamp.date().isoformat())
-        if len(dates) > 1 and payload[field] is not None:
-            raise ValueError("Multiple dates cannot become a single deadline/start date")
-    if payload["status_basis"] == "deadline" and not payload["registration_deadline"]:
+    if payload["status_basis"] == "deadline" and not payload["registration_deadline"] and not any(e.field == "registration_deadline" and e.kind == "fact" and e.quote for e in evidence):
         raise ValueError("Deadline basis requires a deadline")
     if payload["status_basis"] == "registration_start" and not payload["registration_start_date"]:
         raise ValueError("Registration start basis requires a start")

@@ -2,6 +2,7 @@
 import json
 import sqlite3
 import sys
+import re
 
 from .analysis_models import reference_datetime
 from .analysis_store import AnalysisRepository
@@ -24,6 +25,12 @@ def llm_command(args):
         point = reference_datetime(args.as_of)
         if args.llm_action == "compare":
             with readonly_repository(args.db) as repository:
+                if args.analysis_version:
+                    if not re.fullmatch(r"llm-v1:[a-f0-9]{24}", args.analysis_version): raise ValueError("Invalid historical analysis version")
+                    row = repository.db.execute("SELECT model,prompt_version,schema_version FROM llm_requests WHERE analyzer_version=? LIMIT 1", (args.analysis_version,)).fetchone()
+                    if row is None or tuple(row) != (analyzer.model_name, analyzer.prompt_version, analyzer.schema_version):
+                        raise ValueError("Historical model/Prompt/Schema differs from selected configuration")
+                    analyzer.version = args.analysis_version
                 report = compare(repository, analyzer, notice_ids=args.notice_id,
                                  reference_time=point if args.as_of else None)
             atomic_text(args.output, json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -40,7 +47,7 @@ def llm_command(args):
         limit = args.limit or config.batch_limit
         if not args.send:
             with readonly_repository(args.db) as repository:
-                ids = select_ids(repository, analyzer, notice_ids=args.notice_id, limit=limit)
+                ids = select_ids(repository, analyzer, notice_ids=args.notice_id, limit=limit,retry_failed=args.retry_failed)
                 report = preview_batch(repository, analyzer, ids)
         else:
             # Validate key/config before creating tables or touching cached states.
@@ -49,7 +56,7 @@ def llm_command(args):
             with Store(args.db) as store:
                 repository = AnalysisRepository(store); ledger = LLMLedger(repository)
                 analyzer.event_sink = ledger.record
-                ids = select_ids(repository, analyzer, notice_ids=args.notice_id, limit=limit)
+                ids = select_ids(repository, analyzer, notice_ids=args.notice_id, limit=limit,retry_failed=args.retry_failed)
                 report = run_batch(repository, analyzer, ids, reference_time=point)
         atomic_text(args.output, json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps({key: value for key, value in report.items() if key not in {"previews", "analyses"}}, ensure_ascii=False, indent=2))

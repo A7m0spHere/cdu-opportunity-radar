@@ -1,8 +1,8 @@
 # cdu-opportunity-radar
 
-成都大学官方通知采集器。M1 支持来源登记、受控采集和 SQLite/RSS；M2-A 新增离线规则预筛、人工标注及评测。采集、存储、分析和发布独立，不依赖 AstrBot API。
+成都大学官方通知采集器。M1 支持来源登记、受控采集和 SQLite/RSS；M2-A 支持规则预筛、人工标注及评测；M2-B 增加受控 OpenAI-compatible 模型分析和缓存对照评测。采集、存储、分析和发布独立，不依赖 AstrBot API。
 
-**当前 Feed 仍是原始技术验证 Feed**，包括获奖新闻和普通通知；规则预测不会自动改变 Feed 或批准发布。没有真实 LLM、QQ 群订阅或公开发布。复杂日期语义、赛事级转载去重和完整学院采集仍属于后续阶段。
+**当前 Feed 仍是原始技术验证 Feed**，包括获奖新闻和普通通知；规则或模型预测不会自动改变 Feed 或批准发布。模型只在配置有效且显式 --send 时调用，没有 QQ 群订阅或公开发布。复杂日期语义、赛事级转载去重和完整学院采集仍属于后续阶段。
 
 ## 安装
 
@@ -22,6 +22,16 @@ python3 -m venv .venv
 ```
 
 ## 本地运行
+
+### M2-B 模型分析
+
+配置、预览、发送、缓存和对照评测见 [docs/LLM.md](docs/LLM.md)。配置从环境变量读取，默认预览、每批 3 条；API Key 不写入代码、Git 或日志。使用独立 `data/m2b.sqlite3`，保留原始通知和人工标签；对照命令只读取已有模型缓存，不发付费请求。
+
+```powershell
+.\.venv\Scripts\python.exe -m cdu_radar llm analyze --dry-run --output data/m2b-prompt-preview.json
+.\.venv\Scripts\python.exe -m cdu_radar llm analyze --limit 3 --send --output data/m2b-batch.json
+.\.venv\Scripts\python.exe -m cdu_radar llm compare --output data/m2b-comparison.json --errors-output data/m2b-errors.json
+```
 
 ### M2-A 离线规则、人工标注与评测
 
@@ -48,7 +58,7 @@ python3 -m venv .venv
 
 事实、推断、未知分别保存；只有明确年份和日期用途才进入时间字段。多赛道时间不强制归成一个日期，AI 可适用不等于规则允许，学院来源不等于所有本科生有资格。成功结果缓存同时考虑正文和完整输入；原文变化重新待审，旧人工结论留存。分析失败只保留错误类型并待审核。
 
-当前 36 篇全部导出为未标注，尚无有效人工真值，不能报告真实 Precision/Recall/F1。评测以“保留候选（retain + uncertain）”为正例，输出混淆矩阵、未确定比例和错例；不是推送批准率。完整字段和方法见 [分析契约](docs/ANALYSIS_CONTRACT.md) 与 [人工标注指南](docs/LABELING.md)。
+首批 36 篇已由用户完成真实推荐标注并导入：9 条推荐、27 条不推荐。规则基线 Precision=31.58%、Recall=66.67%、F1=42.86%；资格、时间和 AI 政策等细分真值尚未填写。评测以“保留候选（retain + uncertain）”为正例，输出混淆矩阵、未确定比例和错例；不是推送批准率。完整字段和方法见 [分析契约](docs/ANALYSIS_CONTRACT.md) 与 [人工标注指南](docs/LABELING.md)。
 
 ### 原始采集与 RSS（保持兼容）
 

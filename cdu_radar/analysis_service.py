@@ -44,11 +44,14 @@ def analyze_one(repository,notice_id,analyzer=None,reference_time=None):
     analyzer=analyzer or RuleAnalyzer()
     now=reference_datetime(reference_time)
     notice=repository.input(notice_id)
-    result=repository.cached(notice,analyzer.version)
+    try:result=repository.cached(notice,analyzer.version)
+    except (ValueError,TypeError):result=None
     model_name=getattr(analyzer,"model_name",None)
     cached=result is not None and result.analysis_state=="success" and result.model_name==model_name
     if cached:
-        try:validate_output(notice,result,analyzer)
+        try:
+            validate_output(notice,result,analyzer)
+            if hasattr(analyzer,"validate_cached"):analyzer.validate_cached(notice,result)
         except (ValueError,TypeError):cached=False
     if not cached:
         try:
@@ -56,7 +59,13 @@ def analyze_one(repository,notice_id,analyzer=None,reference_time=None):
             validate_output(notice,result,analyzer)
         except Exception as exc:
             # Do not retain exception text/full provider responses or credentials.
-            reason=f"分析失败：{type(exc).__name__}；保留原文并转待审核"
+            category=getattr(exc,"category",None)
+            allowed={"timeout","connection","authentication","forbidden","rate_limited","server_error","http_error",
+                     "response_too_large","invalid_api_json","invalid_api_response","missing_choices","missing_message",
+                     "model_refusal","unexpected_tool_call","incomplete_output","no_final_text","invalid_json",
+                     "schema_validation","missing_api_key","empty_body","input_too_long"}
+            code=category if category in allowed else type(exc).__name__
+            reason=f"分析失败：{code}；保留原文并转待审核"
             result=NoticeAnalysis(notice.notice_id,notice.content_hash,notice.input_hash,analyzer.version,utc_now(),
                 "unknown","uncertain","uncertain","unspecified","unknown",(reason,),
                 (Evidence("analysis_state","unknown","",reason),),True,analysis_state="failed",model_name=getattr(analyzer,"model_name",None))

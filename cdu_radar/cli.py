@@ -63,7 +63,26 @@ def main(argv=None) -> int:
     for command in (analysis,label_export,evaluation,review_list):
         command.add_argument("--rules",type=Path)
         command.add_argument("--as-of",help="YYYY-MM-DD or timestamp with timezone; interpreted in Asia/Shanghai")
+    llm = sub.add_parser("llm", help="Bounded model analysis and cache-only comparison")
+    llm_actions = llm.add_subparsers(dest="llm_action", required=True)
+    llm_analyze = llm_actions.add_parser("analyze", help="Default: preview only; --send explicitly spends API requests")
+    llm_analyze.add_argument("--limit", type=positive_int)
+    mode = llm_analyze.add_mutually_exclusive_group()
+    mode.add_argument("--send", action="store_true")
+    mode.add_argument("--dry-run", action="store_true")
+    llm_analyze.add_argument("--output", type=Path, default=Path("data/m2b-llm-analysis.json"))
+    llm_compare = llm_actions.add_parser("compare", help="Read predictions; never call a model")
+    llm_compare.add_argument("--output", type=Path, default=Path("data/m2b-comparison.json"))
+    llm_compare.add_argument("--errors-output", type=Path)
+    for command in (llm_analyze, llm_compare):
+        command.add_argument("--db", type=Path, default=Path("data/m2b.sqlite3"))
+        command.add_argument("--notice-id", type=positive_int, action="append")
+        command.add_argument("--as-of")
+        command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
+    if args.command == "llm":
+        from .llm_cli import llm_command
+        return llm_command(args)
     if args.command in {"analyze","label","evaluate","review"}:
         return analysis_command(args)
     sources = load_sources()

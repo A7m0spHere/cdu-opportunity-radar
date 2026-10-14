@@ -120,6 +120,7 @@ class NoticeAnalysis:
     reference_time: str | None = None
     status_basis: str = "unknown"
     analysis_state: str = "success"
+    student_opportunity: bool | None = None
 
     def __post_init__(self):
         if type(self.notice_id) is not int or self.notice_id<1:raise ValueError("Invalid analysis id")
@@ -130,6 +131,7 @@ class NoticeAnalysis:
                             ("analysis_state",{"success","failed"})]:choice(getattr(self,name),values,name)
         for name in ["registration_deadline","internal_deadline","registration_start_date","event_start_date","event_end_date","internal_event_date"]:iso_date(getattr(self,name))
         if type(self.needs_manual_review) is not bool:raise ValueError("Invalid manual-review flag")
+        nullable_bool(self.student_opportunity, "student_opportunity")
         if not isinstance(self.evidence,tuple) or any(not isinstance(e,Evidence) for e in self.evidence):raise ValueError("Invalid evidence")
         if not isinstance(self.analysis_reason,tuple) or any(not isinstance(r,str) for r in self.analysis_reason):raise ValueError("Invalid reasons")
         for name in ["event_name","organizer","target_audience","registration_url","requirements_summary","review_reason","reviewed_at","model_name","reference_time"]:

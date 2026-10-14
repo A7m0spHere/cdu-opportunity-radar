@@ -20,6 +20,7 @@ $env:CDU_LLM_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'API K
 | CDU_LLM_API_KEY | 默认的 Key 环境变量，密钥仅作 Authorization 请求头 |
 | CDU_LLM_KEY_ENV | 可指定其他已有 Key 环境变量名，例如 OPENAI_API_KEY |
 | CDU_LLM_TEMPERATURE | 默认不发送；支持的提供商可设置 0—2 |
+| CDU_LLM_THINKING_MODE | 默认不发送；支持的提供商可显式 enabled/disabled，发送 thinking.type；进入分析版本指纹 |
 | CDU_LLM_TIMEOUT | 每请求阶段默认 60 秒，不是整批的总时限 |
 | CDU_LLM_RETRIES | 默认额外重试 1 次，范围 0—3；网络超时/连接、429 和部分 5xx 有限重试 |
 | CDU_LLM_MAX_INPUT_CHARS | 默认 20000，system+user 消息总字符数（含 Schema）；不是 Token 数。过长明确失败，不截断正文或猜测剩余内容 |
@@ -50,21 +51,33 @@ $env:CDU_LLM_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'API K
 # 重复同样 ID/模型/Prompt/输入时应命中缓存，不重复调用。
 .\.venv\Scripts\python.exe -m cdu_radar llm analyze --notice-id 1 --notice-id 3 --notice-id 10 --limit 3 --send --output data/m2b-smoke-cached.json
 
-# 默认挑当前配置下未成功分析的通知，每次最多 3 条；失败允许下一批重新尝试。
+# 默认挑当前配置下尚未尝试的通知，每次最多 3 条；不会反复消费旧失败记录。
 .\.venv\Scripts\python.exe -m cdu_radar llm analyze --limit 3 --send --output data/m2b-next-batch.json
+
+# 明确重试失败：使用 --retry-failed，或通过 --notice-id 指定失败通知。
+.\.venv\Scripts\python.exe -m cdu_radar llm analyze --retry-failed --limit 3 --send --output data/m2b-retry.json
 ```
 
 要有意扩大一批处理数量，先改 CDU_LLM_BATCH_LIMIT，再显式 --limit。批量上限是通知数，真实请求还受 retries 影响；达到上限不继续自动跑下一批。每个请求发送前即保存台账，成功/失败后更新该条，崩溃中的 started 表示结果/费用未知。不要把未知用量当成没有消耗。
 
 发送输入使用 M2-A 脱敏文本，再隐藏带年级标记的人名、凭据样式和链接查询参数；未发送原始 HTML、人工标签、备注、附件正文或文件。这个边界不是完整人名识别系统；先看本地预览核实剩余内容。链接删掉查询参数后不能被模型当成确定完整报名地址。确定判断须有原文可定位引用，资格/政策的缺失不能变成允许，日期用途和多个截止时间严格校验。
 
-JSON 的身份、模型、分析时间和审批状态由程序设置；模型额外输出 approved、工具调用或未允许字段会失败。student_opportunity 是可空布尔值，其余字段兼容 NoticeAnalysis；核实事项存为 verification_items 的 unknown 证据。时间根据标签参考点在本机计算，不能用模型自己假定的“今天”排除候选。
+JSON 的身份、模型、分析时间和审批状态由程序设置；模型额外输出 approved、工具调用或未允许字段会失败。student_opportunity 是可空布尔值，其余字段兼容 NoticeAnalysis；核实事项存为 verification_items 的 unknown 证据。JSON mode 中省略的可空文本字段归为 null；证据 value 的布尔值转为文本，原文完整年月日转成规范日期。关键分类/布尔/理由/证据字段缺失仍失败，不按规则预测补模型答案。
+
+LLM 日期验证与 M2-A 规则的固定标签解析分开：短日期引用会在原正文句子中定位用途，不能从发布日期补年份；同一句明确年份的区间允许省略重复年份，跨年不明时不猜测。证据仅有月日且归一日期未知时可以保留日期片段，不能当作已确认截止。时间根据标签参考点在本机计算，不能用模型自己假定的“今天”排除候选。错误只记录白名单校验代码，不存原始响应/推理文本。
 
 ## 对照评测
 
 ```powershell
 # 只读取缓存，不发 API，也不写分析/标签/审核表；没有 Key 也能评测已有预测。
 .\.venv\Scripts\python.exe -m cdu_radar llm compare --output data/m2b-comparison.json --errors-output data/m2b-errors.json
+```
+
+读取已经实测过的历史分析版本，可以显式加 `--analysis-version`；程序核对模型及 Prompt/Schema 内容版本，并以当前证据校验器重验，不发新 API。不要把不同版本或不完整结果混成当前模型成绩。
+
+```powershell
+# 本机首轮实测结果的无付费重现（已存在报告时换输出名或明确 --overwrite）：
+.\.venv\Scripts\python.exe -m cdu_radar llm compare --analysis-version llm-v1:89e8a0e080bd523db08b159c --output data/m2b-comparison-history.json
 ```
 
 默认按每条标签自己的参考点，沿用现有 evaluate 的正样本定义。可用 --notice-id 明确限制诊断样本；完整对照不限制 ID，覆盖全部有效 human 标签。可用 --as-of 指定固定时点，但只纳入时点一致的人工标签。没有人工标签或旧输入版本不能计入监督指标。
@@ -84,3 +97,7 @@ usage 是当前分析版本的请求/已知 Token/可估费用；usage_all_versi
 旧 collect/export-rss/analyze/label/evaluate/review 命令保留，原 RSS GUID 不变。模型批准不了正式发布，本轮没有 AstrBot、QQ 推送或生产部署。
 
 接口依据：[Chat Completions API](https://developers.openai.com/api/reference/resources/chat/subresources/completions/methods/create)、[Structured Outputs](https://developers.openai.com/api/docs/guides/structured-outputs?api-mode=chat)。兼容提供商可能只支持 JSON mode；本地 Schema、证据及 finish_reason 验证始终执行。
+
+DeepSeek 的 [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode/) 和 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 说明了可选 thinking.type 和 max_tokens 的输出边界。本轮真实联调在用户指定服务中使用实际目录 ID deepseek-v4.1-flash；关闭 thinking、temperature=0、max_tokens=8192、timeout=90、retries=1，Prompt 内容始终保持初版，没有根据人工标签调优。早期截断/校验失败请求的 Token 也计入 usage_all_versions，不因后续兼容修复而消失。
+
+首轮 36 条真实对照仅 5 条通过严格校验、31 条失败（86.11%）。规则 F1=42.86%，LLM 加失败保留的 F1 同为 42.86%；后者 Recall=100% 不代表模型能力更好。详细过程、错误数量及 50 次 POST 的已知 183905 Token 消耗见 VALIDATION.md；没有单价，费用未知。当前不适合自动推荐或正式 RSS。

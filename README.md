@@ -27,6 +27,8 @@ python3 -m venv .venv
 
 配置、预览、发送、缓存和对照评测见 [docs/LLM.md](docs/LLM.md)。配置从环境变量读取，默认预览、每批 3 条；API Key 不写入代码、Git 或日志。使用独立 `data/m2b.sqlite3`，保留原始通知和人工标签；对照命令只读取已有模型缓存，不发付费请求。
 
+首轮指定模型真实尝试 36 条，只有 5 条通过校验、31 条失败待审；当前不适合自动筛选发布。包括失败保留的统计不能当成模型能力提升，完整结果和实际用量见 [验证记录](docs/VALIDATION.md)。
+
 ```powershell
 .\.venv\Scripts\python.exe -m cdu_radar llm analyze --dry-run --output data/m2b-prompt-preview.json
 .\.venv\Scripts\python.exe -m cdu_radar llm analyze --limit 3 --send --output data/m2b-batch.json

@@ -289,7 +289,8 @@ class ChatCompletionsProvider:
                         if stage == "evidence_location":diagnostic["evidence_ok"] = False
                         elif stage == "fact_support":diagnostic["evidence_ok"] = True
                         raise LLMError("schema_validation", detail=detail) from None
-                    diagnostic.update(schema_ok=True, evidence_ok=True, analysis_ok=True, validation_stage="complete")
+                    diagnostic.update(schema_ok=True, evidence_ok=not any(e.location_status == "not_found" for e in getattr(result, "evidence_validation", ())),
+                                      analysis_ok=True, validation_stage="complete")
                     diagnostic["fact_status"] = getattr(result, "fact_status", "not_checked")
                 except httpx.TimeoutException: error = LLMError("timeout", True)
                 except httpx.RequestError: error = LLMError("connection", True)
@@ -351,7 +352,7 @@ class LLMAnalyzer:
         self.prompt_version = contract.PROMPT_VERSION + ":" + fingerprint(self.prompt)[:12]
         self.schema_version = contract.SCHEMA_VERSION + ":" + fingerprint(contract.OUTPUT_SCHEMA)[:12]
         implementation = [files("cdu_radar").joinpath(name).read_text(encoding="utf-8").replace("\r\n", "\n")
-                          for name in ["llm.py", "llm_json.py", "llm_schema.py", "llm_screening.py", "llm_semantics.py", "evidence.py", "analysis_service.py", "analysis_models.py", "rule_analysis.py", "rules.json", "privacy.py"]]
+                          for name in ["llm.py", "llm_json.py", "llm_schema.py", "llm_screening.py", "llm_semantics.py", "screening_dates.py", "evidence.py", "analysis_service.py", "analysis_models.py", "rule_analysis.py", "rules.json", "privacy.py"]]
         self.version = ("llm-v2:" if config.schema_mode == "screening_v2" else "llm-v1:") + fingerprint([config.identity(), self.prompt, self.prompt_version, self.schema_version, contract.OUTPUT_SCHEMA, implementation])[:24]
 
     def prepare(self, notice):
@@ -398,4 +399,7 @@ class LLMAnalyzer:
         coerce_result(payload, notice, supplied, self, result.reference_time)
 
     def validate_dates(self, notice, result):
+        if self.config.schema_mode == "screening_v2":
+            from .screening_dates import validate_screening_dates
+            return validate_screening_dates(notice, result)
         validate_llm_dates(notice, result)

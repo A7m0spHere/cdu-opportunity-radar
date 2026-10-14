@@ -54,9 +54,22 @@ def refresh_time(result,reference_time):
         if status=="open" and result.internal_deadline and deadline_moment(result.internal_deadline)<now:status="unknown"
         elif status=="open" and start and start>now:status="upcoming"
     elif start and start>now:status="upcoming"
+    if status in {"open", "upcoming"} and result.validation_version == "screening-facts-v3" and any(
+            f.field in {"registration_start_date", "registration_deadline", "internal_deadline"} and f.status == "unsupported"
+            for f in result.field_validation):
+        # Preserve independently verified dates, but a rejected time constraint blocks openness.
+        status="unknown"
     decision="exclude" if status=="closed" else result.base_decision
     if result.schema_version == "llm-screening-v2" and result.fact_status != "verified":decision="uncertain"
-    return replace(result,opportunity_status=status,candidate_decision=decision,reference_time=now.isoformat(),
+    audit = []
+    for f in result.field_validation:
+        if f.field in {"opportunity_status", "recommendation"}:
+            trusted = status if f.field == "opportunity_status" else decision
+            if trusted != f.trusted_value and f.status == "verified":
+                f = replace(f,status="unknown" if trusted in {"unknown", "uncertain"} else "verified",reason="recomputed_at_reference_time")
+            f = replace(f,trusted_value=trusted)
+        audit.append(f)
+    return replace(result,opportunity_status=status,candidate_decision=decision,reference_time=now.isoformat(),field_validation=tuple(audit),
                    needs_manual_review=result.needs_manual_review or (status=="unknown" and result.base_decision!="exclude"))
 
 

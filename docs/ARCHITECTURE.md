@@ -1,5 +1,11 @@
 # 系统结构
 
+## M3-A RSS 服务增量
+
+`rss_service` 将只读精确路由与后台出版分开。后台复用 approved_rss/export_approved，只记首次发布时间和系统导出事件，不生成人工审批、模型结果或标签；HTTP 使用 mode=ro 事务复核版本/批准/当前时间，失效即 503 并唤醒后台，定时循环兜底。缓存只在内存验证快照中可服务，旧磁盘 XML 不作回退；状态目录有源绑定与 OS 单写者锁，重启重新生成。
+
+响应读事务保持到发送完成，当前只接受 SQLite 回滚日志模式，WAL 拒绝；不对公网绑定，不提供目录列表或管理接口。rss_synthetic 只操作新建、有双重实验标识的独立合成库，每个实验 URL 命名空间不同，不导入真实库。接口、部署与验收分别见 RSS_HTTP.md、M3A_TEST_GROUP.md、M3A_RESULTS.md；实际插件、Linux/代理和测试群仍未验收。
+
 ## M2-C 独立发布增量
 
 `publication` 保存人工作出的发布快照、当前发布状态和追加事件；`publication_cli` 提供只读队列/查看/历史/草稿及具体指纹确认；`approved_rss` 导出独立 RSS，不复用原始 Feed。写入按需迁移 v5 的 publication_reviews/publication_state/publication_events，不自动迁移标签或旧 analysis_reviews 批准。

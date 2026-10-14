@@ -177,6 +177,24 @@ def test_wal_is_rejected_instead_of_serving_an_old_read_snapshot(service):
     assert request(s)[0]==503 and not c.refresh() and c.snapshot is None
 
 
+@pytest.mark.parametrize('bad_field',['body_blob','approved_json'])
+def test_corrupt_authoritative_data_returns_503_and_can_recover(service,bad_field):
+    root,c,s,_=service
+    with lab(root) as (_,p):
+        if bad_field=='body_blob':
+            original=p.db.execute('SELECT content FROM notices WHERE id=1').fetchone()[0]
+            with p.db:p.db.execute('UPDATE notices SET content=? WHERE id=1',(b'bad-fixture-body',))
+        else:
+            original=p.current(1)['approved_payload']
+            with p.db:p.db.execute('UPDATE publication_reviews SET approved_payload=? WHERE id=?',('{invalid-fixture',p.current(1)['id']))
+    assert request(s)[0]==503 and not c.refresh()
+    with lab(root) as (_,p):
+        with p.db:
+            if bad_field=='body_blob':p.db.execute('UPDATE notices SET content=? WHERE id=1',(original,))
+            else:p.db.execute('UPDATE publication_reviews SET approved_payload=? WHERE id=?',(original,p.current(1)['id']))
+    assert c.refresh() and request(s)[0]==200
+
+
 def test_export_failure_database_failure_and_recovery_fail_closed(service,monkeypatch):
     root,c,s,clock=service;tag=request(s)[1]['ETag']
     from cdu_radar import rss_service

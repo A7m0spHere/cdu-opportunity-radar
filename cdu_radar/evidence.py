@@ -4,6 +4,12 @@ import re
 import unicodedata
 
 
+class EvidenceLocationError(ValueError):
+    def __init__(self, path):
+        super().__init__("Unlocatable evidence")
+        self.path = path
+
+
 @dataclass(frozen=True)
 class EvidenceAssessment:
     field: str

@@ -3,7 +3,7 @@ from dataclasses import replace
 import re
 
 from .analysis_models import Evidence, NoticeAnalysis, CATEGORIES, RELEVANCE, ELIGIBILITY, POLICIES, DECISIONS, iso_date
-from .evidence import locate, contexts
+from .evidence import locate, contexts, EvidenceLocationError
 from .llm_schema import enum, validate_schema, validate_llm_dates
 from .llm_semantics import supports_eligibility, supports_policy, supports_participation
 from .models import utc_now
@@ -47,9 +47,9 @@ def coerce_screening(payload, notice, supplied, analyzer, reference_time):
     checks = []
     evidence = []
     names = {"is_participation_opportunity": "student_opportunity", "ai_relevance": "relevance_level"}
-    for e in payload["evidence"]:
+    for index,e in enumerate(payload["evidence"]):
         match = locate(supplied, e["quote"], e["field"])
-        if match.status == "not_found":raise ValueError("Unlocatable evidence")
+        if match.status == "not_found":raise EvidenceLocationError(f"$.evidence[{index}].quote")
         # Missing quotes are explicit unknowns, not fact evidence.
         evidence.append(Evidence(names.get(e["field"], e["field"]), "fact" if match.source else "unknown",
                                  e["quote"] if e["quote"].strip() else "", "模型初筛引用；事实支持另行校验", e["value"]))

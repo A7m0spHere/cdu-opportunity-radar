@@ -31,6 +31,7 @@ $env:CDU_LLM_API_KEY = [System.Net.NetworkCredential]::new('', (Read-Host 'API K
 | CDU_LLM_PROTOCOL_PROFILE | 默认 generic；deepseek 在显式启用 thinking 时不发送 temperature，不改变服务或模型 |
 | CDU_LLM_OUTPUT_TOKEN_PARAMETER | 默认 max_tokens；可显式 max_completion_tokens，实际第三方支持需验证 |
 | CDU_LLM_STOP_AFTER_FORMAT_FAILURES | 默认连续 2 条格式失败停止本批，1—10；小样本建议 1；不增加重试 |
+| CDU_LLM_CAPTURE_FAILURE_DIAGNOSTICS | 默认 false；可显式 true/1，在本地台账记录有界脱敏结构片段和字段路径；不保存原始响应 |
 | CDU_LLM_PROMPT_FILE | 可选可信本地补充 Prompt；内容进入版本指纹，不读取无关配置 |
 | CDU_LLM_INPUT_PRICE_PER_MILLION | 可选每百万输入 Token 单价 |
 | CDU_LLM_OUTPUT_PRICE_PER_MILLION | 可选每百万输出 Token 单价；必须与输入价一起设置 |
@@ -114,3 +115,7 @@ usage 是当前分析版本的请求/已知 Token/可估费用；usage_all_versi
 DeepSeek 的 [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode/) 和 [JSON Output](https://api-docs.deepseek.com/guides/json_mode/) 说明了可选 thinking.type 和 max_tokens 的输出边界。本轮真实联调在用户指定服务中使用实际目录 ID deepseek-v4.1-flash；关闭 thinking、temperature=0、max_tokens=8192、timeout=90、retries=1，Prompt 内容始终保持初版，没有根据人工标签调优。早期截断/校验失败请求的 Token 也计入 usage_all_versions，不因后续兼容修复而消失。
 
 首轮 36 条真实对照仅 5 条通过严格校验、31 条失败（86.11%）。规则 F1=42.86%，LLM 加失败保留的 F1 同为 42.86%；后者 Recall=100% 不代表模型能力更好。详细过程、错误数量及 50 次 POST 的已知 183905 Token 消耗见 VALIDATION.md；没有单价，费用未知。当前不适合自动推荐或正式 RSS。
+
+M2-B.2 审批前只完成离线准备，真实请求为 0；两关样本、固定预算、参数、诊断留存及审批边界见 [M2B2_TEST_PLAN.md](M2B2_TEST_PLAN.md)。专用 probe 默认为 dry-run，真实发送要求明确批准和一致的计划指纹，在独立 SQLite 副本中执行，任一技术失败停止全部剩余请求。
+
+随后获批的 M2-B.2 第一关只发送 ID 34：HTTP 200、finish_reason=stop，最终 content 带 Markdown 代码围栏，裸 JSON 校验失败。累计 1 次 POST、1764 Token，第二关未执行，未重试。详见 [M2B2_RESULTS.md](M2B2_RESULTS.md)；Schema、引用与业务判断没有进入真实验证，原人工标签/数据库不变。

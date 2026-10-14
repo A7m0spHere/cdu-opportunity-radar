@@ -330,7 +330,7 @@ def test_outbound_identity_redaction_preserves_years_and_qualification():
     assert external_text(title, False) == title
     body = '我院学子示例甲(23物联)、示例乙（23物联）参赛。在示例丙和示例丁老师指导下完成项目。\n（图/示例戊、文/示例己）活动记录。\n一审：示例庚\n仅限本科生，教师可以指导。'
     result = external_text(body)
-    assert '我院学子[身份信息已移除]' in result
+    assert '[名单信息已移除]' in result
     assert all(name not in result for name in ['示例甲', '示例乙', '示例丙', '示例丁', '示例戊', '示例己', '示例庚'])
     assert '仅限本科生，教师可以指导' in result
 

@@ -21,7 +21,7 @@ from .llm_schema import validate_llm_dates
 from .llm_schema import SchemaValidationError
 from .models import utc_now
 from .privacy import sanitize
-from .evidence import locate
+from .evidence import locate, EvidenceLocationError
 
 
 SCHEMA_DETAILS = {
@@ -84,12 +84,14 @@ class LLMConfig:
     schema_mode: str = "detailed_v1"
     protocol_profile: str = "generic"
     output_token_parameter: str = "max_tokens"
+    capture_failure_diagnostics: bool = False
     prompt_file: str | None = None
     input_price_per_million: float | None = None
     output_price_per_million: float | None = None
     cost_currency: str | None = None
 
     def __post_init__(self):
+        if type(self.capture_failure_diagnostics) is not bool:raise ValueError("Invalid failure capture mode")
         try:
             url = urlsplit(self.base_url)
             loopback = url.hostname == "localhost" or bool(url.hostname and ipaddress.ip_address(url.hostname).is_loopback)
@@ -134,7 +136,11 @@ class LLMConfig:
             if name in {"base_url", "model"}: continue
             raw = env.get("CDU_LLM_" + name.upper())
             if raw is None or raw == "": continue
-            try: values[name] = converters[name](raw) if name in converters else raw
+            try:
+                if name == "capture_failure_diagnostics":
+                    if raw.lower() not in {"true","false","1","0"}:raise ValueError()
+                    values[name] = raw.lower() in {"true","1"}
+                else:values[name] = converters[name](raw) if name in converters else raw
             except (ValueError, TypeError): raise ValueError("Invalid CDU_LLM_" + name.upper()) from None
         return cls(**values)
 
@@ -205,19 +211,42 @@ class ChatCompletionsProvider:
                 if event_sink: event_sink(dict(event))  # Persist before spending a request.
                 started = time.monotonic()
                 error = None
+                content = None; data = None
+                raw = bytearray()
                 try:
                     with client.stream("POST", endpoint, json=payload, headers={"Authorization": "Bearer " + key}) as response:
                         code = event["status_code"] = response.status_code
+                        mime = response.headers.get("content-type","").split(";",1)[0].strip().lower()
+                        diagnostic["response_mime"] = mime if mime in {"application/json","application/problem+json","text/html","text/plain","text/event-stream","application/octet-stream"} else "unknown"
                         if code != 200:
+                            if config.capture_failure_diagnostics:
+                                diagnostic.update(validation_stage="api_envelope",validation_error_path="$")
+                                for chunk in response.iter_bytes():
+                                    raw.extend(chunk)
+                                    if len(raw)>8192:
+                                        raw = raw[:8192]; diagnostic["error_body_truncated"] = True; break
+                                diagnostic["response_bytes"] = len(raw)
+                                try:error_body = strict_json(raw)
+                                except (ValueError,UnicodeError):error_body = None
+                                event["usage"] = usage_values(error_body)
+                                known_params = {"model","response_format","thinking","temperature","max_tokens","max_completion_tokens"}
+                                if isinstance(error_body,dict) and isinstance(error_body.get("error"),dict):
+                                    diagnostic["validation_error_path"] = "$.error"
+                                    error_param = error_body["error"].get("param")
+                                    if isinstance(error_param,str) and error_param in known_params:
+                                        diagnostic.update(provider_error_param=error_param,validation_error_path="$.error.param")
                             category = "authentication" if code == 401 else "forbidden" if code == 403 else "rate_limited" if code == 429 else "server_error" if code >= 500 else "http_error"
                             raise LLMError(category, code == 429 or code in {500, 502, 503, 504})
                         diagnostic["request_ok"] = True
-                        raw = bytearray()
+                        diagnostic["validation_stage"] = "api_envelope"
                         for chunk in response.iter_bytes():
                             raw.extend(chunk)
                             if len(raw) > 1024 * 1024: raise LLMError("response_too_large")
+                    diagnostic["response_bytes"] = len(raw)
                     try: body = strict_json(raw)
-                    except (ValueError, UnicodeError): raise LLMError("invalid_api_json") from None
+                    except (ValueError, UnicodeError) as exc:
+                        if isinstance(exc,json.JSONDecodeError):diagnostic.update(api_json_error_line=exc.lineno,api_json_error_column=exc.colno)
+                        raise LLMError("invalid_api_json") from None
                     if not isinstance(body, dict): raise LLMError("invalid_api_response")
                     event["usage"] = usage_values(body)
                     diagnostic["returned_model_matches_config"] = body.get("model") == config.model if isinstance(body.get("model"), str) else None
@@ -234,6 +263,7 @@ class ChatCompletionsProvider:
                     finish = choice.get("finish_reason")
                     diagnostic["finish_reason"] = finish if isinstance(finish, str) and finish in {"stop", "length", "content_filter", "tool_calls", "function_call", "insufficient_system_resource"} else "unknown"
                     content = message.get("content")
+                    diagnostic["content_present"] = content is not None
                     diagnostic["content_chars"] = len(content) if isinstance(content, str) else None
                     diagnostic["reasoning_chars"] = len(message["reasoning_content"]) if isinstance(message.get("reasoning_content"), str) else None
                     diagnostic["validation_stage"] = "final_content"
@@ -252,6 +282,8 @@ class ChatCompletionsProvider:
                     diagnostic.update(json_ok=True, validation_stage="schema")
                     try: result = validator(data)
                     except (ValueError, TypeError, KeyError) as exc:
+                        if isinstance(exc,(SchemaValidationError,EvidenceLocationError)):
+                            diagnostic["validation_error_path"] = exc.path
                         if isinstance(exc, SchemaValidationError):
                             diagnostic.update(schema_error_path=exc.path, missing_schema_fields=list(exc.missing_fields))
                         detail = SCHEMA_DETAILS.get(str(exc), "invalid_schema")
@@ -269,6 +301,12 @@ class ChatCompletionsProvider:
                 if error:
                     diagnostic["analysis_ok"] = False
                     if diagnostic["request_ok"] is None:diagnostic["request_ok"] = False
+                    if config.capture_failure_diagnostics:
+                        from .llm_debug import failure_evidence
+                        try:expected_id = strict_json(messages[-1]["content"])["untrusted_notice"]["notice_id"]
+                        except (ValueError,TypeError,KeyError,IndexError):expected_id = None
+                        envelope = bytes(raw).decode("utf-8",errors="replace") if content is None and raw else None
+                        diagnostic["failure_evidence"] = failure_evidence(content,data,diagnostic,expected_id,envelope)
                 event.update(error_category=error.category if error else None, elapsed_ms=round((time.monotonic() - started) * 1000))
                 if event_sink: event_sink(dict(event))
                 if error is None: return result
@@ -293,6 +331,10 @@ def external_text(value, remove_identity_lines=True):
     value = re.sub(r"在[^。\n]{1,40}(?:老师|教师)指导下", "在指导教师的指导下", value)
     value = re.sub(r"[（(][^）)\n]{0,50}(?:图[/:：]|文[/:：])[^）)\n]{0,50}[）)]", "", value)
     value = re.sub(r"(?m)^.*(?:一审|二审|三审|撰稿|摄影|责任编辑|作者)[：:].*$", "", value)
+    # Group/contact rows are unnecessary for screening and must not leave the machine.
+    value = re.sub(r"(?mi)^.*(?:QQ|微信|群号|群聊|姓名|学号).*$", "[联系或身份信息已移除]", value)
+    # An award roster can contain unannotated coauthors between cohort-tagged names.
+    value = re.sub(r"(?m)^.*[（(](?:20)?\d{2}(?![年级届])[A-Za-z\u4e00-\u9fff][^）)\n]{0,17}[）)].*$", "[名单信息已移除]", value)
     value = re.sub(r"https?://[^\s<>，。；]+", lambda m: external_url(m.group()), value)
     return value
 
@@ -334,7 +376,17 @@ class LLMAnalyzer:
         supplied, messages = self.prepare(notice)
         sink = (lambda event: self.event_sink(notice, self, event)) if self.event_sink else None
         coercer = self.contract.coerce_screening if self.config.schema_mode == "screening_v2" else coerce_result
-        return self.provider.complete(messages, lambda payload: coercer(payload, notice, supplied, self, reference_time), event_sink=sink)
+        def validator(payload):
+            result = coercer(payload, notice, supplied, self, reference_time)
+            # Include the existing original-input check in provider diagnostics too.
+            # Redaction markers are not factual quotes from the original notice.
+            from .analysis_service import validate_output
+            for index,e in enumerate(result.evidence):
+                if e.kind == "fact" and locate(notice,e.quote).status not in {"valid","normalized_match"}:
+                    raise EvidenceLocationError(f"$.evidence[{index}].quote")
+            validate_output(notice,result,self)
+            return result
+        return self.provider.complete(messages, validator, event_sink=sink)
 
     def validate_cached(self, notice, result):
         supplied, _ = self.prepare(notice)

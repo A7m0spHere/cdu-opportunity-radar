@@ -1,0 +1,17 @@
+# M2-C 离线验收（2026-10-14）
+
+实现可信本地管理员的发布队列、原文/缓存证据/字段审计/评测标签查看，先预览再确认的批准、拒绝、暂缓和撤销，版本绑定审批与更正审计，以及独立 approved.xml。无需 LLM 成功或 Key，不调用模型。操作指南见 [PUBLICATION.md](PUBLICATION.md)，插件交接见 [ASTRBOT_HANDOFF.md](ASTRBOT_HANDOFF.md)。
+
+基线 `24131ee`、393 项测试；完成后 **436 passed**，保留全部原测试，新增 43 项。pip check、git diff --check 通过。feedparser 实际版本 6.0.14，标准 XML、中文/特殊字符、空 Feed、单/多条、稳定 GUID/pubDate 和完整离线端到端流程均通过。
+
+新增出版三表及按需 v5 迁移，不导入旧 analysis_reviews 或推荐标签。确认指纹绑定原文实质版本、审批前态、人工内容、审核人/原因；写入时锁内重新检查。源变化使发布 withheld 并入队，原人工快照和历史保留；时间戳刷新、模型重分析不撤销批准。新 GUID 命名空间与原 Feed 分开，官方 URL 唯一，不做跨 URL 语义归并。
+
+在原运行库的 SQLite backup 副本 `data/m2c.sqlite3` 验收：12 个旧表所有行与 `data/m2b2b.sqlite3` 完全相同，36 条标签、371 条分析、52 条旧请求保持；user_version=5、integrity_check=ok。发布队列 36 条，publication_reviews=0，既有通知批准数 **0**。实际生成并重复导出 `data/approved.xml`，均 0 条目、0 新增，文件内容一致且 feedparser 无 bozo。完整记录在忽略文件 data/m2c-acceptance-v1.json，源库未改。81 个既有数据文件的 SHA-256 全部不变，新增代码/文档/合成示例凭据扫描通过。
+
+公共 [RSS 格式示例](examples/approved-example.xml) 和 [草稿示例](examples/publication-draft.example.json) 是合成数据，不代表真实通知或人工发布。真实 34 只做本地只读查看，未批准，未再调用 API。
+
+测试覆盖推荐标签及旧批准不能出版、LLM 失败可审核、确认写入、拒绝/暂缓/撤销、重复确认幂等、错指纹及跨操作复用拒绝、原文/标题/日期/附件变化、正文哈希异常、撤销后更正、模型/采集时间不影响、期限到期、角色日期与政策事实约束、原 XML/数据库保护、原子写失败与恢复、批量历史隔离、v1/v2/v4/未来版本兼容迁移，以及采集 Mock → 入库 → 规则 → 人工决定 → RSS → feedparser。
+
+已知边界：自由简介仍需人工语义核验；复杂资格与附件不自动判定。静态 XML 不实时监听更改/到期，生产串联需要后续调度及失败停服设计。SQLite 与 XML 不能共同原子提交，故保留首次发布时点并允许稳定重试；客户端仍需去重。RSS 移除不能撤回 QQ，同 GUID 更正不保证被重推。两插件首次订阅对空 Feed 的行为不同，现场测试仍未执行。
+
+新增付费 API 请求 **0**，没有部署、HTTP 服务启动、AstrBot 安装、QQ 消息或自动历史批准。分支 `codex/m2c-publication-review`，基于 `24131ee`。以上记录为离线验收时状态；后续 Git 交付以该分支提交记录为准。

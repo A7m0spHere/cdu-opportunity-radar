@@ -1,5 +1,15 @@
 # 系统结构
 
+## M2-C 独立发布增量
+
+`publication` 保存人工作出的发布快照、当前发布状态和追加事件；`publication_cli` 提供只读队列/查看/历史/草稿及具体指纹确认；`approved_rss` 导出独立 RSS，不复用原始 Feed。写入按需迁移 v5 的 publication_reviews/publication_state/publication_events，不自动迁移标签或旧 analysis_reviews 批准。
+
+批准绑定实质源版本（实际正文摘要、存储正文哈希、标题、URL、网页日期、原文单位元数据与链接/附件），不绑定模型或采集时间。Store.save_notice 在原事务末尾仅对有活动批准且版本改变的通知调用 source_updated，冻结待复核并记录系统事件，不生成审批。导出再次核对版本、期限和状态，即使绕过采集修改正文也不会覆盖新版；更正保留 URL/GUID/首次时间并追加待处理记录。
+
+只读预览复用现有 mode=ro 连接，无 Store 初始化或迁移，不分析、不调用网络；确认写入有 BEGIN IMMEDIATE 和前态/草稿指纹校验。人工草稿含受控原文事实与显式未知，模型及评测数据仅作参考，不拥有发布权限。
+
+正式 XML 使用批准快照，时间和 GUID 由持久发布状态提供；文件原子替换失败可恢复同一身份。SQLite 与文件不是一个事务，采用保留时间、锁内替换、成功记录的最小恢复策略；静态 XML 到期与变更后仍需显式重导出。原 RSS 输出不改，HTTP/调度/认证及群更正发送属于后续联调设计。见 PUBLICATION.md 与 M2C_RESULTS.md。
+
 ## M2-B.1 离线诊断增量
 
 `evidence` 只做 NFC/空白规范化和原文位置映射；`llm_semantics` 保守检查关键事实支持；`llm_screening` 提供显式可选的 llm-screening-v2 初筛契约；`llm_diagnostics` 只读历史报告与缓存，不重建缺失响应。NoticeAnalysis 的新增 Schema、fact_status 和证据评估字段都有兼容旧缓存的缺省值。

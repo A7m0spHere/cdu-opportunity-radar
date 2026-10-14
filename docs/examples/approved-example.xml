@@ -1,0 +1,17 @@
+<?xml version='1.0' encoding='utf-8'?>
+<rss version="2.0">
+  <channel>
+    <title>成都大学 · 人工批准的参与机会</title>
+    <link>https://www.cdu.edu.cn/</link>
+    <description>仅包含有效人工发布审批；未知事项明确标注。</description>
+    <language>zh-cn</language>
+    <item>
+      <title>合成示例 · AI 实践竞赛</title>
+      <link>https://computer.cdu.edu.cn/info/1/99999.htm</link>
+      <guid isPermaLink="false">urn:uuid:71c98c7e-6ac7-5ff3-8c7c-e34b940c9f0c</guid>
+      <pubDate>Wed, 14 Oct 2026 12:00:00 +0800</pubDate>
+      <source url="https://computer.cdu.edu.cn/info/1/99999.htm">CDU synthetic example; not actually published</source>
+      <description>&lt;p&gt;仅用于离线验收的合成活动简介，不代表实际采集或发布。&lt;br/&gt;来源：CDU synthetic example; not actually published&lt;br/&gt;主办方报名截止：未知，需核验；不能据此认定符合或允许&lt;br/&gt;校内报名/推荐截止：未知，需核验；不能据此认定符合或允许&lt;br/&gt;报名开始：未知，需核验；不能据此认定符合或允许&lt;br/&gt;参与范围（原文）：未知，需核验；不能据此认定符合或允许&lt;br/&gt;AI 使用规则（原文）：未知，需核验；不能据此认定符合或允许&lt;br/&gt;官方原文：https://computer.cdu.edu.cn/info/1/99999.htm&lt;br/&gt;资格条款不等于所有学生已符合条件；选拔及其他细则以官方原文为准。&lt;/p&gt;</description>
+    </item>
+  </channel>
+</rss>

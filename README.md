@@ -2,6 +2,8 @@
 
 成都大学官方通知采集器。M1 支持来源登记、受控采集和 SQLite/RSS；M2-A 支持规则预筛、人工标注及评测；M2-B 增加受控模型分析和字段事实审计；M2-C 增加本地人工发布审批和独立已批准 RSS。采集、存储、预测、评测标签和发布审批独立，不依赖 AstrBot API。
 
+M3-A 增加只读环回 RSS HTTP 服务、安全刷新/失效暂停和隔离合成联调。已做本地 HTTP 与 Mock 验证，尚未部署公网或连接实际 AstrBot/QQ。
+
 **原始 Feed 仍是技术验证 Feed**，包括获奖新闻和普通通知；`approved.xml` 则只包含当前有效、明确人工批准的内容。规则预测、模型结果、推荐标签和旧分析审核不会自动发布。模型只在配置有效且显式 --send 时调用，目前没有 QQ 群订阅或公网部署。
 
 ## 安装
@@ -22,6 +24,21 @@ python3 -m venv .venv
 ```
 
 ## 本地运行
+
+### M3-A 安全 HTTP 与隔离合成联调
+
+先使用全新目录的合成初始化条目，不能把真实历史通知导入或批准成测试消息：
+
+```powershell
+.\.venv\Scripts\python.exe -m cdu_radar rss-synthetic init --directory artifacts/m3a-lab --ttl 3600
+.\.venv\Scripts\python.exe -m cdu_radar serve-approved-rss --db artifacts/m3a-lab/synthetic.sqlite3 --state-dir artifacts/m3a-lab/http-state --bind 127.0.0.1 --port 8765 --interval 10 --max-age 30
+# 另一终端：仅在确认订阅初始化历史后增加第二条：
+.\.venv\Scripts\python.exe -m cdu_radar rss-synthetic add --directory artifacts/m3a-lab --ttl 3600
+```
+
+服务只提供 GET/HEAD `/approved.xml`、`/health`，不会把 data 或状态目录作为文件服务器。后台复用有效人工批准导出，每个读请求复核源/审批/时间；变更或故障先返回 503，安全刷新后恢复，没有旧 XML 回退。默认只绑定环回，不允许直接 LAN/公网绑定；当前要求本地 SQLite 回滚日志模式，WAL 拒绝服务。
+
+Windows/Linux 与网络权限要求见 [HTTP 指南](docs/RSS_HTTP.md)，实际验收边界见 [M3-A 记录](docs/M3A_RESULTS.md)，非空初始化及待用户执行的真实测试群流程见 [测试手册](docs/M3A_TEST_GROUP.md)。合法空 Feed 未必能建立插件历史，不能把 Mock 通过当作真实群联调通过。
 
 ### M2-C 人工审核与已批准 RSS
 

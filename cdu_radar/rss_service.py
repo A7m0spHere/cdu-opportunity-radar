@@ -21,7 +21,7 @@ from .publication import PublicationRepository, table_exists
 from .storage import Store
 
 LOG=logging.getLogger(__name__)
-ERRORS=(OSError,ValueError,TypeError,KeyError,sqlite3.Error)
+ERRORS=(OSError,ValueError,TypeError,KeyError,AttributeError,RecursionError,sqlite3.Error)
 
 
 class StateLease:

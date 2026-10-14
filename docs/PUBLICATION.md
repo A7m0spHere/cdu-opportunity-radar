@@ -104,16 +104,16 @@ RSS 2.0 只包含仍有效的批准快照，标题和简要摘要来自管理员
 
 没有批准时是合法空 Feed。本机 data/approved.xml 已实际生成并重复导出，0 条目；所有历史 36 条均未批准。feedparser 6.0.14 验证通过。[批准 RSS 格式示例](examples/approved-example.xml) 仅为合成示例，不是本机正式通知。
 
-静态 XML 是导出时的有效快照，并不会自己监听数据库或时钟。收集、审核变更或有效期到达后必须重新导出；导出失败应暂停对外提供旧文件并处理错误，不能把旧静态文件当成实时审批状态。未来调度/HTTP 服务必须把这些步骤串行化，本轮没有部署调度器或服务。
+单次静态导出的 XML 不会自己监听数据库或时钟。收集、审核变更或到期后必须重新导出；导出失败不能把旧文件当成实时审批状态。M3-A 后续增量已提供后台刷新与请求时只读复核的安全 HTTP 服务，见 RSS_HTTP.md；它不改变本页的人工审批流程，也未部署到生产。
 
-## 未来轻量 HTTP 与测试群联调
+## M3-A 安全 HTTP 与测试群联调（后续增量）
 
-不要把整个 data 目录暴露给 HTTP，它含 SQLite、标签和私有诊断。另设只放正式 XML 的目录，例如先导出至 data/public/approved.xml，再由管理员自行启动：
+不要把整个 data 目录暴露给 HTTP，它含 SQLite、标签和私有诊断。使用 M3-A 的精确路由守门服务，禁止普通静态服务器直接服务旧 XML/私有缓存：
 
 ```powershell
-.\.venv\Scripts\python.exe -m http.server 8000 --bind 127.0.0.1 --directory data/public
+.\.venv\Scripts\python.exe -m cdu_radar serve-approved-rss --db data/m2c.sqlite3 --state-dir data/m3a-rss-state --bind 127.0.0.1 --port 8765
 ```
 
-上述服务本轮未启动。跨容器或测试机需要另外选定仅供测试网络访问的地址、只读目录及网络权限；不要发布审核端点。M2-C 不需要大型 Web 后端，生产前仍要设计变更后重导出、有效期刷新和失败停服策略。
+M2-C 阶段未启动服务，M3-A 只验证了独立合成数据的环回 HTTP；没有运行本机真实库的发布服务。后台刷新失败或源内容失效时拒绝旧内容；Windows/Linux、回滚日志模式及受控代理要求见 RSS_HTTP.md。跨容器或测试机仍须另行授权网络目标，不发布审核端点或绕过 503 的静态回退。
 
 插件首次订阅及去重差异、测试群分步骤方案见 [ASTRBOT_HANDOFF.md](ASTRBOT_HANDOFF.md)。本轮没有安装 AstrBot、连接 QQ、付费 LLM 或生产部署。

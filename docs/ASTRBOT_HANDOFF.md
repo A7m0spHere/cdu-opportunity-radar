@@ -1,5 +1,7 @@
 # AstrBot 测试群交接方案（未执行联调）
 
+M3-A 后续增量已完成隔离合成库、真实环回 HTTP 和持久去重 Mock；这仍不是实际 AstrBot/QQ 验收。当前操作以 [M3A_TEST_GROUP.md](M3A_TEST_GROUP.md) 为准，服务采用安全守门路由，不直接静态发布目录。下文保留 M2-C 的源码研究与交接边界。
+
 2026-10-14 只读研究用户指定的两个插件；没有安装、运行或发群消息。固定观察版本：RSSHub a047f46e47cb2a0f7a795f30b9f82ae027005846、Soulter RSS 57244346672bd1b35098bd8e4adc8913aa412094。feedparser 通过不等于 AstrBot 实际推送验收通过。
 
 ## 源码确认的行为

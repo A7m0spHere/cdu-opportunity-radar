@@ -40,6 +40,8 @@ python3 -m venv .venv
 
 Windows/Linux 与网络权限要求见 [HTTP 指南](docs/RSS_HTTP.md)，实际验收边界见 [M3-A 记录](docs/M3A_RESULTS.md)，非空初始化及待用户执行的真实测试群流程见 [测试手册](docs/M3A_TEST_GROUP.md)。合法空 Feed 未必能建立插件历史，不能把 Mock 通过当作真实群联调通过。
 
+M3-B 当前处于真实联调前的准备阶段：[分支审查、只读环境检查与现场验收表](docs/M3B_PREFLIGHT.md)。尚未登录服务器、安装 RSS 插件或发送测试群消息。
+
 ### M2-C 人工审核与已批准 RSS
 
 无需模型或 Key。管理员查看原文及已有证据，填写独立草稿，先预览再用具体指纹确认。原文版本变化后批准失效，重新入队；重复导出保留 GUID 和首次发布时间。未知资格/日期/AI 规则明确保留，不能变成已核实断言。
@@ -53,7 +55,7 @@ Windows/Linux 与网络权限要求见 [HTTP 指南](docs/RSS_HTTP.md)，实际�
 
 本机 `data/m2c.sqlite3` 是保留历史数据的备份副本，已迁移至 v5；历史 36 条未批准，实际 `approved.xml` 是合法空 Feed。新环境先准备自己的采集库/副本。完整批准、拒绝、暂缓、撤销、草稿与确认步骤见 [发布指南](docs/PUBLICATION.md)，离线证据见 [M2-C 验收](docs/M2C_RESULTS.md)，未来测试群方案见 [AstrBot 交接](docs/ASTRBOT_HANDOFF.md)。合成 [RSS 示例](docs/examples/approved-example.xml) 不代表真实发布。
 
-只有显式 `--confirm` 才修改审批或写正式 XML。旧 `review set --confirm` 保留为分析审核，不能出版；review list 现为发布队列，不自动重新分析。不要把原始 feed.xml 交给正式订阅器，也不要直接公开整个 data 目录。静态 Feed 需要在源内容/审批变更和到期后重新导出；本轮没有部署刷新服务。
+本地审批/单次导出命令只有显式 `--confirm` 才修改审批或写 XML；安全 HTTP 后台会自动刷新已经有效的批准，不创建人工批准。旧 `review set --confirm` 保留为分析审核，不能出版；review list 现为发布队列，不自动重新分析。不要把原始 feed.xml 交给正式订阅器，也不要直接公开整个 data 目录。单次静态导出不能代替带失效守门的 HTTP 服务；当前没有部署服务器刷新服务。
 
 ### M2-B 模型分析
 

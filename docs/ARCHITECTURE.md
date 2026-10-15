@@ -1,5 +1,11 @@
 # 系统结构
 
+## M4-B 当前结构
+
+`collect → Adapter → Store + notice_health → AutoRepository（规则分类、时间与来源质量）→ AutoFeedController → RSS`。HTTP 路由、OS 状态锁与保持至响应完成的 SQLite 回滚读事务复用 M3-A；自动发布状态使用独立 `auto_publications`，不查询人工审批来决定发布，不消费人工队列、标签或 LLM 缓存。
+
+成功解析保存版本校验哈希；文章请求/解析失败使旧正文停止发布；源检查超过 72 小时也停止发布。新服务 `/approved.xml` 为 410，原审批写 CLI 与旧服务入口退役；旧表只读保存。采集不再调用写入旧审批事件的 `source_updated`，改用独立失效标记，避免原文恢复旧版本后复活历史审批。详见 [完整契约](AUTO_PUBLICATION.md)。下文为各阶段历史设计。
+
 ## M3-A RSS 服务增量
 
 `rss_service` 将只读精确路由与后台出版分开。后台复用 approved_rss/export_approved，只记首次发布时间和系统导出事件，不生成人工审批、模型结果或标签；HTTP 使用 mode=ro 事务复核版本/批准/当前时间，失效即 503 并唤醒后台，定时循环兜底。缓存只在内存验证快照中可服务，旧磁盘 XML 不作回退；状态目录有源绑定与 OS 单写者锁，重启重新生成。

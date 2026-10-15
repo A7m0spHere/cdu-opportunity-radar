@@ -132,5 +132,5 @@ def test_cli_show_approve_and_revoke_work_with_broken_advisory_cache(store,tmp_p
         cmd=action+['--db',str(path),'--reviewer','fixture-admin','--reason','Offline decision']
         assert main(cmd)==0;preview=json.loads(capsys.readouterr().out)
         assert preview['advisory_errors']
-        assert main(cmd+['--confirm',preview['confirmation_token']])==0;capsys.readouterr()
+        assert main(cmd+['--confirm',preview['confirmation_token']])==2;capsys.readouterr()
     assert not pub.effective(ident,NOW)['valid']

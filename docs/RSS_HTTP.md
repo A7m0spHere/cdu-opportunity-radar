@@ -1,5 +1,7 @@
 # M3-A：只读 RSS HTTP 与安全刷新
 
+> 历史接口说明。当前使用 [M4-B 自动 RSS](AUTO_PUBLICATION.md) 的 `serve-rss`；新服务 `/approved.xml` 返回 410，原 `serve-approved-rss` 启动入口停用。M3-A 的读事务、锁和 503 原则继续复用，但不再要求人工审批或 v5 审批表。
+
 服务基于 main `954e914` 的人工发布契约。它不采集、不分析、不修改评测标签或人工审批，也不连接 AstrBot。HTTP 只允许精确的 GET/HEAD `/approved.xml` 和 `/health`，其他路径 404、写方法 405；没有目录列表、文件下载或管理接口。始终只绑定显式环回 IP，本轮不提供 0.0.0.0/LAN/公网绑定开关。
 
 ## 刷新与拒绝旧内容

@@ -110,14 +110,14 @@ def test_old_confirmation_cannot_execute_different_action(store):
 @pytest.mark.parametrize('change',['content','title','date','attachment'])
 def test_source_version_changes_withhold_old_snapshot_without_erasing_history(store,change,tmp_path):
     nid,pub=setup(store);decide(pub,nid);export(pub,tmp_path/'approved.xml')
-    old=dict(pub.current(nid));n,_=snapshot(pub.db,nid)
+    old=dict(pub.current(nid));history=pub.history(nid);n,_=snapshot(pub.db,nid)
     article=Article(n['title'],n['published_at'],n['content'])
     article=replace(article,**{'content':'修订说明。'+article.content} if change=='content' else {'title':'修订后的竞赛报名'} if change=='title' else {'published_at':'2026-10-02'} if change=='date' else {'attachments':(ArticleLink('规则附件','https://computer.cdu.edu.cn/rules.pdf'),)})
     store.save_notice('computer',n['canonical_url'],article)
     assert pub.effective(nid,NOW)['effective_review_status']=='needs_revision'
     assert not pub.feed_plan(NOW)['items'] and pub.queue(NOW)[0]['notice_id']==nid
     assert pub.history(nid)['reviews'][0]['approved_title']==old['approved_title']
-    assert pub.history(nid)['events'][-1]['action']=='source_changed'
+    assert pub.history(nid)==history  # M4-B preserves legacy approval history as read-only.
     export(pub,tmp_path/'approved.xml')
     assert not feedparser.parse((tmp_path/'approved.xml').read_bytes()).entries
 
@@ -284,14 +284,14 @@ def test_cli_requires_exact_confirmation_and_protects_raw_feed(store,tmp_path,ca
     before=hashlib.sha256(path.read_bytes()).hexdigest()
     assert main(cmd+['--confirm','bad-token'])==2;capsys.readouterr()
     assert hashlib.sha256(path.read_bytes()).hexdigest()==before
-    assert main(cmd+['--confirm',plan['confirmation_token']])==0;capsys.readouterr()
+    assert main(cmd+['--confirm',plan['confirmation_token']])==2;capsys.readouterr()
+    assert hashlib.sha256(path.read_bytes()).hexdigest()==before
     assert main(['export-approved-rss','--db',str(path),'--output',str(tmp_path/'feed.xml')])==2;capsys.readouterr()
     out=tmp_path/'approved.xml';args=['export-approved-rss','--db',str(path),'--output',str(out)]
     assert main(args)==0;p=json.loads(capsys.readouterr().out)
-    assert p['new_publications']==1 and not out.exists()
-    assert p['entries'][0]['approved_content']['facts']['eligibility'] is None
-    assert main(args+['--confirm',p['plan_hash']])==0
-    assert json.loads(capsys.readouterr().out)['items']==1
+    assert p['new_publications']==0 and not out.exists()
+    assert main(args+['--confirm',p['plan_hash']])==2
+    assert not out.exists()
 
 
 def test_offline_collection_to_rule_analysis_to_human_publication_to_feedparser(store,sources,sample,tmp_path):
@@ -327,10 +327,10 @@ def test_cli_reject_defer_revoke_confirmation_and_history(store,capsys):
     for name,status in [('reject','rejected'),('defer','needs_revision'),('revoke','revoked')]:
         cmd=['review',name,str(nid),'--db',str(path),'--reviewer','local-admin','--reason','合成测试决策']
         assert main(cmd)==0;p=json.loads(capsys.readouterr().out)
-        assert p['preview'] and main(cmd+['--confirm',p['confirmation_token']])==0
-        assert json.loads(capsys.readouterr().out)['publication']['review_status']==status
+        assert p['preview'] and main(cmd+['--confirm',p['confirmation_token']])==2
+        capsys.readouterr()
     assert main(['review','history',str(nid),'--db',str(path)])==0
-    assert len(json.loads(capsys.readouterr().out)['reviews'])==3
+    assert len(json.loads(capsys.readouterr().out)['reviews'])==0
 
 
 def test_existing_non_approved_xml_and_invalid_export_token_are_protected(store,tmp_path,capsys):

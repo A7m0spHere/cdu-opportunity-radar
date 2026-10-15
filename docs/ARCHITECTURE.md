@@ -1,5 +1,23 @@
 # 系统结构
 
+## M4-D 显式预览边界
+
+独立 `lan_preview` 只转发固定本机环回端口的明确公开路由，不读数据库/本地文件或设置。CLI 默认不监听，必须指定 RFC1918 地址、精确设备白名单并显式启用；本轮只做环回验证。每次核验上游公开服务标记和 JSON/MIME 契约，不跟随重定向、不转发 Cookie/Authorization、不缓存旧内容；上游 503/断开原样保持失效保护。核心 `make_server` 仍拒绝 LAN/通配绑定。
+
+真实发现的短维护页（HTTP 200、无正文容器）由 SourceUnavailable 标记来源暂不可用，不当成新模板，也不覆盖已有正文。系统采集时点补全年份。[协议/安全审查及手动命令](LAN_PREVIEW.md)、[真实信息验证](M4D_RESULTS.md)。
+
+## M4-C 学生页
+
+同一 Python `serve-rss` 提供固定网页资源和 `/api/notices`，没有独立应用服务。`AutoFeedController` 生成 RSS 时同时生成经过字段裁剪的公开快照；JSON 响应在原 read_gate 的数据库只读事务和响应锁内输出，复核来源、内容版本、时间和快照时效。静态 HTML 不嵌通知数据，失败时仍能加载界面；JSON/网络/核验失效会清空浏览器卡片。
+
+前端原生 DOM/textContent，不使用外部脚本、CORS、客户端存储或写接口。白名单路由与内容类型明确，未知路径/参数拒绝。新增 source_checked_at 保留真实系统采集时点，原文发布日期与首次收录另列；行政通知不因未来截止进入当前机会。来源目录每次实时计划加载一次，减少冗余查询但不缓存跨请求的质量结论。详见 [学生页契约](STUDENT_PAGE.md)。
+
+## M4-B 当前结构
+
+`collect → Adapter → Store + notice_health → AutoRepository（规则分类、时间与来源质量）→ AutoFeedController → RSS`。HTTP 路由、OS 状态锁与保持至响应完成的 SQLite 回滚读事务复用 M3-A；自动发布状态使用独立 `auto_publications`，不查询人工审批来决定发布，不消费人工队列、标签或 LLM 缓存。
+
+成功解析保存版本校验哈希；文章请求/解析失败使旧正文停止发布；源检查超过 72 小时也停止发布。新服务 `/approved.xml` 为 410，原审批写 CLI 与旧服务入口退役；旧表只读保存。采集不再调用写入旧审批事件的 `source_updated`，改用独立失效标记，避免原文恢复旧版本后复活历史审批。详见 [完整契约](AUTO_PUBLICATION.md)。下文为各阶段历史设计。
+
 ## M3-A RSS 服务增量
 
 `rss_service` 将只读精确路由与后台出版分开。后台复用 approved_rss/export_approved，只记首次发布时间和系统导出事件，不生成人工审批、模型结果或标签；HTTP 使用 mode=ro 事务复核版本/批准/当前时间，失效即 503 并唤醒后台，定时循环兜底。缓存只在内存验证快照中可服务，旧磁盘 XML 不作回退；状态目录有源绑定与 OS 单写者锁，重启重新生成。

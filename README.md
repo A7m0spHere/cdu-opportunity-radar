@@ -1,10 +1,14 @@
 # cdu-opportunity-radar
 
-成都大学官方通知采集器。M1 支持来源登记、受控采集和 SQLite/RSS；M2-A 支持规则预筛、人工标注及评测；M2-B 增加受控模型分析和字段事实审计；M2-C 增加本地人工发布审批和独立已批准 RSS。采集、存储、预测、评测标签和发布审批独立，不依赖 AstrBot API。
+面向成都大学学生的校园机会自动聚合平台。仅从既有、已验证的官方来源采集通知，解析、分类、按原文 URL 去重并检查质量后，自动进入 RSS。每条信息带官方来源、原文链接、可核实的来源日期和可追溯的原文节选；报名状态未知、已截止与历史信息分开标记。
 
-M3-A 增加只读环回 RSS HTTP 服务、安全刷新/失效暂停和隔离合成联调。已做本地 HTTP 与 Mock 验证，尚未部署公网或连接实际 AstrBot/QQ。
+**当前路线：M4-C 学生通知页 + M4-B 自动聚合。无需 RSS 阅读器、逐条人工审批、付费模型或 QQ/AstrBot。** 启动 `serve-rss` 后打开 `/` 即可浏览最新通知，筛选当前机会/历史/分类并打开官方原文。网页和 `/feed.xml`、`/current.xml`、`/history.xml` 共用质量与 503 门禁。[学生页运行与数据接口](docs/STUDENT_PAGE.md)、[M4-C 验证](docs/M4C_RESULTS.md)；原自动发布契约见 [AUTO_PUBLICATION](docs/AUTO_PUBLICATION.md)。目前仅本机运行，未部署服务器。
 
-**原始 Feed 仍是技术验证 Feed**，包括获奖新闻和普通通知；`approved.xml` 则只包含当前有效、明确人工批准的内容。规则预测、模型结果、推荐标签和旧分析审核不会自动发布。模型只在配置有效且显式 --send 时调用，目前没有 QQ 群订阅或公网部署。
+M4-D 完成一次隔离真实采集：17 篇入库、15 篇合格聚合、2 篇参与候选、0 篇明确仍可报名；未知状态保持未知。另有需用户显式启用、按具体设备 IP 限制的[独立局域网预览方案](docs/LAN_PREVIEW.md)，核心服务仍只监听环回。本轮没有开启 LAN/公网监听，跨设备和 Linux 原生仍未验证。[实际结果与试用判断](docs/M4D_RESULTS.md)。
+
+M3-B.8 的 QQ 插件与独立 OneBot 发送冻结继续生效。旧 M2-C/M3-A 审批记录只读保留；`serve-approved-rss` 和审批确认写入已停用，新服务的 `/approved.xml` 返回 410，不重定向、不标作“已人工审核”。旧规则评分、推荐标签和审批均不控制新 Feed。
+
+旧 `export-rss` 仍是技术诊断导出，不能当作带质量守门的自动 Feed；它生成的同名文件与新 HTTP `/feed.xml` 是不同入口。下文 M1–M3 操作保留为历史参考，涉及批准写入和旧 HTTP 启动的命令不再适用。
 
 ## 安装
 
@@ -23,7 +27,26 @@ python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 ```
 
+`dev` 包含 PyYAML，用于本地 Compose 草稿静态审查，不属于产品运行依赖。安装后可使用同一虚拟环境检查归档草稿：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/validate_m3b4_design.py
+```
+
+Linux 使用 `.venv/bin/python scripts/validate_m3b4_design.py`。脚本只读取本地草稿，不执行 Docker、SSH、插件加载或消息发送；检查通过不解除上述 NO-GO。
+
 ## 本地运行
+
+### 当前：自动聚合，无需审批
+
+```powershell
+.\.venv\Scripts\python.exe -m cdu_radar collect --db data/auto.sqlite3 --source computer --limit 3
+.\.venv\Scripts\python.exe -m cdu_radar serve-rss --db data/auto.sqlite3 --state-dir data/auto-http --collect-interval 3600 --source computer
+```
+
+直接打开 [学生通知页](http://127.0.0.1:8765/)，也可订阅 [全部通知](http://127.0.0.1:8765/feed.xml) 或 [当前机会](http://127.0.0.1:8765/current.xml)。没有明确报名期限的通知不会因为刚被采集就进入当前机会；当前机会可以为空，默认网页仍展示最新聚合内容。Linux 将 Python 路径换为 `.venv/bin/python`。[学生页指南](docs/STUDENT_PAGE.md)包含同源接口、未知状态、故障处理和离线预览。
+
+### 以下为历史分析、评测和审批流程
 
 ### M3-A 安全 HTTP 与隔离合成联调
 
@@ -40,7 +63,11 @@ python3 -m venv .venv
 
 Windows/Linux 与网络权限要求见 [HTTP 指南](docs/RSS_HTTP.md)，实际验收边界见 [M3-A 记录](docs/M3A_RESULTS.md)，非空初始化及待用户执行的真实测试群流程见 [测试手册](docs/M3A_TEST_GROUP.md)。合法空 Feed 未必能建立插件历史，不能把 Mock 通过当作真实群联调通过。
 
-M3-B 当前处于真实联调前的准备阶段：[分支审查、只读环境检查与现场验收表](docs/M3B_PREFLIGHT.md)。尚未登录服务器、安装 RSS 插件或发送测试群消息。
+M3-B 的[早期分支审查与现场检查方案](docs/M3B_PREFLIGHT.md)已留档；后续已完成生产只读调查，尚未安装 RSS 插件或发送测试群消息。
+
+M3-B.4 已完成专用固定会话 RSS 插件的离线实现：默认关闭、无聊天命令或 LLM 工具、持久去重和有界投递预算；[历史方案与部署申请设计](docs/M3B4_MINIMAL_PLUGIN.md)。生产环境仅做过只读调查，插件和单 RSS 容器尚未安装/启动，Mock 不代表 QQ 送达。
+
+M3-B.5 审查修复了取消/超时被吞掉后的状态与停止延迟，候选升级为 v0.1.1；[交付审查、固定 SDK 验证及当时的五份申请](docs/M3B5_REVIEW.md)保留作历史记录。后续以文首 M3-B.8 决策为准，不据这些旧申请继续生产预检、安装或发送。
 
 ### M2-C 人工审核与已批准 RSS
 

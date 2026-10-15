@@ -5,7 +5,7 @@ from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
-from .models import Article, ArticleLink, NoticeLink, ParseError, official_url
+from .models import Article, ArticleLink, NoticeLink, ParseError, SourceUnavailable, official_url
 
 DATE = re.compile(r"(?<!\d)(20\d{2})[-年/.](\d{1,2})[-月/.](\d{1,2})(?:日)?(?!\d)")
 ARTICLE_PATH = re.compile(r"^/info/\d+/\d+\.htm$")
@@ -117,6 +117,9 @@ class VsbAdapter:
         # VSB's content form and IDs are verified from both real sites.
         form = soup.find("form", attrs={"name": "_newscontent_fromname"})
         if not form:
+            text=soup.get_text(' ',strip=True)
+            if len(text)<400 and re.search(r'页面正在修复中，请稍后重试|系统维护中，请稍后再试',text):
+                raise SourceUnavailable('Official article currently shows a maintenance page')
             raise ParseError(f"{url}: VSB article form missing")
         body = form.find(id=re.compile(r"^vsb_content(?:_\d+)?$"))
         if not body:

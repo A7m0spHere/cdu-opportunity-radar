@@ -21,11 +21,14 @@ def positive_int(value):
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description="CDU notice collector, local RSS and offline rule evaluation")
+    for stream in (sys.stdout, sys.stderr):
+        if (getattr(stream,'encoding',None) or '').lower().replace('-','')!='utf8' and hasattr(stream,'reconfigure'):
+            stream.reconfigure(encoding='utf-8')
+    parser = argparse.ArgumentParser(description="CDU automatic official notice aggregation, safe RSS and offline evaluation")
     sub = parser.add_subparsers(dest="command", required=True)
     listing = sub.add_parser("sources", help="Show catalog and current SQLite state")
     collection = sub.add_parser("collect", help="Collect bounded official pages, no publishing")
-    export = sub.add_parser("export-rss", help="Export successfully parsed notices to local RSS 2.0")
+    export = sub.add_parser("export-rss", help="Legacy technical diagnostic export; use serve-rss for automatic aggregation")
     for command in (listing, collection, export):
         command.add_argument("--db", type=Path, default=Path("data/radar.sqlite3"))
     collection.add_argument("--source", action="append", help="Source id; repeatable (default: implemented adapters)")
@@ -50,7 +53,7 @@ def main(argv=None) -> int:
     evaluation=sub.add_parser("evaluate",help="Evaluate only explicitly imported labels")
     evaluation.add_argument("--output",type=Path,default=Path("data/m2a-evaluation.json"))
     evaluation.add_argument("--include-synthetic",action="store_true")
-    review=sub.add_parser("review",help="Manual review history, independent of predictions")
+    review=sub.add_parser("review",help="Read-only historical review inspection; confirmation writes are retired")
     review_actions=review.add_subparsers(dest="review_action",required=True)
     review_list=review_actions.add_parser("list")
     review_list.add_argument('--all',action='store_true',help='Include approved, rejected and revoked publication decisions')
@@ -61,24 +64,46 @@ def main(argv=None) -> int:
     review_set.add_argument("--status",choices=["pending","approved","rejected"],required=True)
     review_set.add_argument("--reason",required=True)
     review_set.add_argument("--reviewer",required=True)
-    review_set.add_argument('--confirm',action='store_true',help='Confirm legacy analysis-only review; never publishes RSS')
+    review_set.add_argument('--confirm',action='store_true',help='Retired; confirmation writes are rejected in M4-B')
     for command in (analysis,label_export,label_import,evaluation,review_list,review_set):
         command.add_argument("--db",type=Path,default=Path("data/m2a.sqlite3"))
     for command in (analysis,label_export,evaluation,review_list):
         command.add_argument("--rules",type=Path)
         command.add_argument("--as-of",help="YYYY-MM-DD or timestamp with timezone; interpreted in Asia/Shanghai")
-    approved=sub.add_parser('export-approved-rss',help='Preview effective approvals; --confirm PLAN_HASH writes independent RSS')
+    approved=sub.add_parser('export-approved-rss',help='Historical approval preview only; confirmed export is retired')
     approved.add_argument('--db',type=Path,default=Path('data/m2a.sqlite3'))
     approved.add_argument('--output',type=Path,default=Path('data/approved.xml'))
     approved.add_argument('--confirm')
     approved.add_argument('--dry-run',action='store_true',help='Read-only preview; incompatible with --confirm')
-    rss_server=sub.add_parser('serve-approved-rss',help='Loopback RSS only; safe background refresh of existing approvals')
+    rss_server=sub.add_parser('serve-approved-rss',help='Retired; use serve-rss for automatic /feed.xml')
     rss_server.add_argument('--db',type=Path,required=True)
     rss_server.add_argument('--state-dir',type=Path,required=True,help='Exclusive private service cache; never served as a directory')
     rss_server.add_argument('--bind',default='127.0.0.1')
     rss_server.add_argument('--port',type=int,default=8765)
     rss_server.add_argument('--interval',type=float,default=10)
     rss_server.add_argument('--max-age',type=float,default=30)
+    auto=sub.add_parser('aggregate',help='Inspect automatic quality, category and time state; no human approval or LLM')
+    auto.add_argument('--db',type=Path,required=True)
+    auto.add_argument('--as-of')
+    auto_server=sub.add_parser('serve-rss',help='Automatic aggregation RSS with live 503 gate; no approvals or models')
+    auto_server.add_argument('--db',type=Path,required=True)
+    auto_server.add_argument('--state-dir',type=Path,required=True)
+    auto_server.add_argument('--bind',default='127.0.0.1')
+    auto_server.add_argument('--port',type=int,default=8765)
+    auto_server.add_argument('--interval',type=float,default=10)
+    auto_server.add_argument('--max-age',type=float,default=30)
+    auto_server.add_argument('--collect-interval',type=float,default=0,help='Optional bounded collection every N seconds (>=60); 0 serves DB only')
+    auto_server.add_argument('--source',action='append')
+    auto_server.add_argument('--limit',type=positive_int,default=3)
+    auto_server.add_argument('--no-env-proxy',action='store_true')
+    lan=sub.add_parser('serve-lan-preview',help='Explicit device-allowlisted read proxy; never changes the loopback RSS listener')
+    lan.add_argument('--bind',required=True,help='Specific RFC1918 device IPv4, never 0.0.0.0')
+    lan.add_argument('--allow-client',action='append',required=True,help='Specific allowed device IPv4; repeatable, at most 8')
+    lan.add_argument('--port',type=int,default=8780)
+    lan.add_argument('--upstream-port',type=int,default=8765)
+    lan_mode=lan.add_mutually_exclusive_group()
+    lan_mode.add_argument('--check-only',action='store_true',help='Validate configuration and local public upstream; open no listener')
+    lan_mode.add_argument('--enable-lan',action='store_true',help='Explicitly enable the separate private-address listener')
     synthetic=sub.add_parser('rss-synthetic',help='Separate synthetic-only lab; never uses existing user data')
     synthetic_actions=synthetic.add_subparsers(dest='synthetic_action',required=True)
     for name in ['init','add','revoke','update','approve']:
@@ -112,9 +137,27 @@ def main(argv=None) -> int:
         command.add_argument("--as-of")
         command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
-    if args.command=='serve-approved-rss':
-        from .rss_service import serve_command
+    if args.command=='serve-lan-preview':
+        from .lan_preview import serve_command
         return serve_command(args)
+    if ((args.command=='review' and args.review_action in {'approve','reject','defer','revoke','set'} and getattr(args,'confirm',None))
+            or args.command=='export-approved-rss' and args.confirm
+            or args.command=='serve-approved-rss'):
+        print('M4-B: human approval publishing is retired and history is read-only; use serve-rss for /feed.xml.',file=sys.stderr)
+        return 2
+    if args.command=='serve-rss':
+        from .auto_service import serve_command
+        return serve_command(args)
+    if args.command=='aggregate':
+        from .auto_publish import AutoRepository
+        try:
+            if not args.db.is_file():raise ValueError('Database does not exist')
+            from .analysis_models import reference_datetime
+            with Store(args.db) as store:
+                plan=AutoRepository(store.db).feed_plan(reference_datetime(args.as_of))
+            print(json.dumps(plan,ensure_ascii=False,indent=2));return 0
+        except (OSError,sqlite3.Error,ValueError) as exc:
+            print(f'{type(exc).__name__}: {exc}',file=sys.stderr);return 2
     if args.command=='rss-synthetic':
         from .rss_synthetic import synthetic_command
         return synthetic_command(args)

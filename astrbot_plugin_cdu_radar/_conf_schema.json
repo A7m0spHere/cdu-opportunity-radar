@@ -1,0 +1,9 @@
+{
+  "enabled": {"description": "管理员明确启用读取和发送；默认关闭", "type": "bool", "default": false},
+  "feed_url": {"description": "固定的显式 HTTP 环回 /approved.xml URL；不接受重定向或凭据", "type": "string", "default": "http://127.0.0.1:8765/approved.xml"},
+  "target_umo": {"description": "人工核对的完整唯一 QQ unified_msg_origin，不能用通配或省略平台", "type": "string", "default": ""},
+  "poll_interval_seconds": {"description": "轮询间隔，15–3600 秒", "type": "int", "default": 30},
+  "max_send_attempts": {"description": "该来源/目标持久累计的总投递尝试上限（含失败、重启不清零）；增加须重新审批", "type": "int", "default": 2},
+  "retry_limit": {"description": "明确平台未找到（False）后的每条额外重试上限 0–2；异常/超时不自动重试", "type": "int", "default": 0},
+  "retry_delay_seconds": {"description": "明确失败重试等待时间，30–86400 秒", "type": "int", "default": 60}
+}

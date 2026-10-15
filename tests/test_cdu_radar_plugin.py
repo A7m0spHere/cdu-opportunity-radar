@@ -243,11 +243,112 @@ def test_cancelled_worker_records_uncertain_and_has_no_detached_send(tmp_path):
             finally:exited.set()
         c=Consumer(settings(),tmp_path,f,send)
         await c.poll_once();f.body=rss('seed','new');c.start()
-        await asyncio.wait_for(entered.wait(),1);await c.close()
+        await asyncio.wait_for(entered.wait(),1)
+        started=asyncio.get_running_loop().time();await c.close()
+        assert asyncio.get_running_loop().time()-started<1
         assert c.task.done() and exited.is_set() and c.closed
         c2=Consumer(settings(),tmp_path,f,Send())
         assert next(r for r in rows(c2) if r['guid']=='new')['status']=='uncertain'
         await c2.close()
+    asyncio.run(run())
+
+
+def test_sender_swallowing_timeout_is_not_marked_submitted(tmp_path,monkeypatch):
+    import astrbot_plugin_cdu_radar.engine as engine
+    monkeypatch.setattr(engine,'SUBMIT_TIMEOUT_SECONDS',0.02)
+    async def run():
+        f=Fetch()
+        async def send(target,text):
+            try:await asyncio.Event().wait()
+            except asyncio.CancelledError:return True
+        c=Consumer(settings(),tmp_path,f,send)
+        try:
+            await c.poll_once();f.body=rss('seed','new');await c.poll_once()
+            assert next(r for r in rows(c) if r['guid']=='new')['status']=='uncertain'
+            assert c.ledger.value('attempts')=='1'
+        finally:await c.close()
+    asyncio.run(run())
+
+
+def test_concurrent_polls_reserve_one_shared_persistent_budget(tmp_path):
+    async def run():
+        f=Fetch();s=Send();c=Consumer(settings(),tmp_path,f,s)
+        try:
+            await c.poll_once();f.body=rss('seed','a','b','c')
+            await asyncio.gather(*(c.poll_once() for _ in range(12)))
+            assert len(s.calls)==2 and len(set(text for _,text in s.calls))==2
+            assert c.ledger.value('attempts')=='2' and sum(r['attempts'] for r in rows(c))==2
+        finally:await c.close()
+    asyncio.run(run())
+
+
+def test_reservation_is_committed_and_visible_before_platform_call(tmp_path):
+    async def run():
+        f=Fetch();seen=[]
+        async def send(target,text):
+            with sqlite3.connect((tmp_path/'state.sqlite3').as_uri()+'?mode=ro',uri=True) as db:
+                seen.append((db.execute("SELECT value FROM meta WHERE key='attempts'").fetchone()[0],
+                             db.execute("SELECT status FROM entries WHERE guid='new'").fetchone()[0]))
+            return True
+        c=Consumer(settings(),tmp_path,f,send)
+        try:
+            await c.poll_once();f.body=rss('seed','new');await c.poll_once()
+            assert seen==[('1','inflight')]
+        finally:await c.close()
+    asyncio.run(run())
+
+
+def test_claim_commit_failure_prevents_any_external_submission(tmp_path):
+    class CommitFailure:
+        def __init__(self,db):self.db=db;self.exits=0
+        def __getattr__(self,name):return getattr(self.db,name)
+        def __enter__(self):self.db.__enter__();return self
+        def __exit__(self,*args):
+            self.exits+=1
+            if self.exits==2:  # observe commits; claim reservation fails to commit.
+                self.db.rollback();raise sqlite3.OperationalError('synthetic commit failure')
+            return self.db.__exit__(*args)
+    async def run():
+        f=Fetch();s=Send();c=Consumer(settings(),tmp_path,f,s)
+        try:
+            await c.poll_once();c.ledger.db=CommitFailure(c.ledger.db);f.body=rss('seed','new')
+            with pytest.raises(sqlite3.OperationalError):await c.poll_once()
+            assert not s.calls and c.ledger.value('attempts')=='0'
+            assert next(r for r in rows(c) if r['guid']=='new')['attempts']==0
+        finally:await c.close()
+    asyncio.run(run())
+
+
+def test_budget_connection_enforces_full_sync_from_weaker_default(tmp_path,monkeypatch):
+    original=sqlite3.connect
+    def weak_connect(*args,**kwargs):
+        db=original(*args,**kwargs);db.execute('PRAGMA synchronous=OFF');return db
+    monkeypatch.setattr(sqlite3,'connect',weak_connect)
+    async def run():
+        c=Consumer(settings(),tmp_path,Fetch(),Send())
+        try:assert c.ledger.db.execute('PRAGMA synchronous').fetchone()[0]==2
+        finally:await c.close()
+    asyncio.run(run())
+
+
+def test_sender_swallowing_cancellation_is_still_uncertain(tmp_path):
+    async def run():
+        f=Fetch();entered=asyncio.Event()
+        async def send(target,text):
+            entered.set()
+            try:await asyncio.Event().wait()
+            except asyncio.CancelledError:return True
+        c=Consumer(settings(),tmp_path,f,send)
+        await c.poll_once();f.body=rss('seed','new');c.start()
+        await asyncio.wait_for(entered.wait(),1)
+        started=asyncio.get_running_loop().time();await c.close()
+        assert asyncio.get_running_loop().time()-started<1
+        reopened=Consumer(settings(),tmp_path,f,Send())
+        try:
+            row=next(r for r in rows(reopened) if r['guid']=='new')
+            assert row['status']=='uncertain'
+            assert row['attempts']==1 and reopened.ledger.value('attempts')=='1'
+        finally:await reopened.close()
     asyncio.run(run())
 
 

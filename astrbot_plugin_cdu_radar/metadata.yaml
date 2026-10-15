@@ -1,6 +1,6 @@
 name: astrbot_plugin_cdu_radar
 display_name: CDU Radar 固定会话 RSS
 desc: 仅消费人工批准 RSS；固定来源、固定会话、默认关闭；没有命令或 LLM 工具。
-version: v0.1.0
+version: v0.1.1
 author: CDU Radar contributors
 astrbot_version: ">=4.25.5,<4.26.0"

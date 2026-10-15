@@ -11,7 +11,7 @@ FILES = ['__init__.py','main.py','engine.py','metadata.yaml','_conf_schema.json'
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--output',type=Path,default=ROOT/'artifacts/astrbot_plugin_cdu_radar-0.1.0.zip')
+    parser.add_argument('--output',type=Path,default=ROOT/'artifacts/astrbot_plugin_cdu_radar-0.1.1.zip')
     args = parser.parse_args()
     folder = ROOT/'astrbot_plugin_cdu_radar'
     for name in FILES:

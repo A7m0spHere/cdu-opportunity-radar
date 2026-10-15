@@ -7,7 +7,7 @@ from .engine import Consumer, HttpFetcher, Settings, valid_target
 
 
 @register('astrbot_plugin_cdu_radar', 'CDU Radar contributors',
-          '固定来源、固定会话、默认关闭的人工批准 RSS', '0.1.0')
+          '固定来源、固定会话、默认关闭的人工批准 RSS', '0.1.1')
 class CDURadarPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context)

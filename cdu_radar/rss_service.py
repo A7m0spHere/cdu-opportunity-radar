@@ -75,6 +75,7 @@ class FeedController:
     retired_paths = ()
     state_kind = 'm3a-rss-state-v1'
     static_assets = {}
+    public_contract = None
 
     def response_snapshot(self, snapshot, path):
         return snapshot
@@ -218,6 +219,7 @@ def make_server(controller, host='127.0.0.1', port=8765):
         def log_message(self,*args):pass  # Never log query strings, headers or request bodies.
         def reply(self, status, body, content_type='text/plain; charset=utf-8', etag=None):
             self.send_response(status);self.send_header('Content-Type',content_type)
+            if controller.public_contract:self.send_header('X-CDU-Public-Contract',controller.public_contract)
             self.send_header('Cache-Control','no-store, max-age=0');self.send_header('X-Content-Type-Options','nosniff')
             self.send_header('Referrer-Policy','no-referrer')
             self.send_header('Cross-Origin-Resource-Policy','same-origin')

@@ -9,7 +9,7 @@ let data = null, view = "all", pollTimer, expiryTimer, requestController, genera
 function formatTime(value) {
   const stamp = new Date(value);
   if (!Number.isFinite(stamp.getTime())) return "未提供";
-  return new Intl.DateTimeFormat("zh-CN", {timeZone: "Asia/Shanghai", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false}).format(stamp);
+  return new Intl.DateTimeFormat("zh-CN", {timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false}).format(stamp);
 }
 
 function sourceUrl(value) {

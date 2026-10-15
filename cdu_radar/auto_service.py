@@ -16,6 +16,7 @@ class AutoFeedController(FeedController):
     paths=('/feed.xml','/current.xml','/history.xml','/api/notices')
     retired_paths=('/approved.xml',)
     state_kind='m4b-auto-rss-state-v1'
+    public_contract='student-notices-v1'
 
     def __init__(self, db, state_dir, *, data_mode='live', **kwargs):
         if data_mode not in {'live','offline_replay'}:raise ValueError('Invalid data mode')

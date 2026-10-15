@@ -18,6 +18,7 @@ import httpx
 MAX_BYTES = 512 * 1024
 MAX_ITEMS = 200
 MAX_HISTORY = 50000  # Fail closed instead of pruning dedup tombstones.
+SUBMIT_TIMEOUT_SECONDS = 8
 SESSION = re.compile(r'[A-Za-z0-9_-]{1,64}:(?:GroupMessage|FriendMessage):[1-9][0-9]{4,19}')
 
 
@@ -185,6 +186,10 @@ class Ledger:
             new = not path.exists()
             self.db = sqlite3.connect(path.resolve().as_uri() + ('?mode=rwc' if new else '?mode=rw'), uri=True, timeout=1)
             self.db.row_factory = sqlite3.Row
+            # Budget reservations must not inherit a weaker SQLite build default.
+            self.db.execute('PRAGMA synchronous=FULL')
+            if self.db.execute('PRAGMA synchronous').fetchone()[0] != 2:
+                raise ValueError('Full durability is required for submission reservations')
             if new:
                 self.db.executescript('''BEGIN;
                     CREATE TABLE meta (key TEXT PRIMARY KEY,value TEXT NOT NULL);
@@ -304,11 +309,20 @@ class Consumer:
                 try:
                     if not self.allowed():
                         self.ledger.finish(item.guid,'withheld','authorization_changed'); return
-                    result = await asyncio.wait_for(self.send(self.settings.target_umo,item.message), timeout=8)
+                    started = time.monotonic()
+                    deadline = asyncio.timeout(SUBMIT_TIMEOUT_SECONDS)
+                    async with deadline:
+                        result = await self.send(self.settings.target_umo,item.message)
                 except asyncio.CancelledError:
                     self.ledger.finish(item.guid,'uncertain','cancelled_during_submission'); raise
                 except Exception:
                     self.ledger.finish(item.guid,'uncertain','submission_outcome_unknown')
+                    self.last_status = 'uncertain'; return
+                # A lower SDK layer can swallow cancellation and return True.
+                # Do not turn an interrupted/late call into a confirmed submission.
+                if (deadline.expired() or not self.allowed() or asyncio.current_task().cancelling()
+                        or time.monotonic()-started >= SUBMIT_TIMEOUT_SECONDS):
+                    self.ledger.finish(item.guid,'uncertain','interrupted_or_late_result')
                     self.last_status = 'uncertain'; return
                 if result is True:
                     self.ledger.finish(item.guid,'submitted')
@@ -329,6 +343,8 @@ class Consumer:
             try:
                 while self.allowed():
                     await self.poll_once()
+                    if not self.allowed():
+                        break
                     await asyncio.sleep(self.settings.poll_interval_seconds)
             except asyncio.CancelledError:
                 raise

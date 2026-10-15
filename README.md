@@ -1,176 +1,136 @@
-# cdu-opportunity-radar
+# CDU Opportunity Radar · 校园机会雷达
 
-面向成都大学学生的校园机会自动聚合平台。仅从既有、已验证的官方来源采集通知，解析、分类、按原文 URL 去重并检查质量后，自动进入 RSS。每条信息带官方来源、原文链接、可核实的来源日期和可追溯的原文节选；报名状态未知、已截止与历史信息分开标记。
+面向成都大学学生的校园通知聚合工具。把比赛、科研与创新实践、AI / 计算机相关活动及其他校园信息放在一处浏览，每条通知都能直接打开官方原文。
 
-**当前路线：M4-C 学生通知页 + M4-B 自动聚合。无需 RSS 阅读器、逐条人工审批、付费模型或 QQ/AstrBot。** 启动 `serve-rss` 后打开 `/` 即可浏览最新通知，筛选当前机会/历史/分类并打开官方原文。网页和 `/feed.xml`、`/current.xml`、`/history.xml` 共用质量与 503 门禁。[学生页运行与数据接口](docs/STUDENT_PAGE.md)、[M4-C 验证](docs/M4C_RESULTS.md)；原自动发布契约见 [AUTO_PUBLICATION](docs/AUTO_PUBLICATION.md)。目前仅本机运行，未部署服务器。
+**可信来源自动采集 · 网页直接阅读 · RSS 订阅 · 无需逐条人工审批**
 
-M4-D 完成一次隔离真实采集：17 篇入库、15 篇合格聚合、2 篇参与候选、0 篇明确仍可报名；未知状态保持未知。另有需用户显式启用、按具体设备 IP 限制的[独立局域网预览方案](docs/LAN_PREVIEW.md)，核心服务仍只监听环回。本轮没有开启 LAN/公网监听，跨设备和 Linux 原生仍未验证。[实际结果与试用判断](docs/M4D_RESULTS.md)。
+Python 3.11+ · [AGPL-3.0-only](LICENSE) · 本地 MVP，有限体验准备阶段
 
-M3-B.8 的 QQ 插件与独立 OneBot 发送冻结继续生效。旧 M2-C/M3-A 审批记录只读保留；`serve-approved-rss` 和审批确认写入已停用，新服务的 `/approved.xml` 返回 410，不重定向、不标作“已人工审核”。旧规则评分、推荐标签和审批均不控制新 Feed。
+[快速开始](#快速开始) · [信息与接口](#信息与接口) · [当前边界](#当前边界) · [文档](#文档) · [许可证](#许可证)
 
-旧 `export-rss` 仍是技术诊断导出，不能当作带质量守门的自动 Feed；它生成的同名文件与新 HTTP `/feed.xml` 是不同入口。下文 M1–M3 操作保留为历史参考，涉及批准写入和旧 HTTP 启动的命令不再适用。
+## 目前能做什么
 
-## 安装
+- **浏览通知**：默认展示最新聚合内容，支持类别、当前机会和历史信息筛选，兼容手机与桌面布局。
+- **核实来源**：展示官方发布单位、原文链接、有依据的来源日期，以及可追溯的原文节选。
+- **自动更新**：可启用定时采集；按最终原文 URL 去重，内容更新后刷新 RSS 与网页，保持 GUID 和首次聚合发布时间稳定。
+- **保留不确定性**：缺少报名依据时明确显示“报名状态未确认”；当前机会可以为空。
+- **阻止无效内容**：来源未验证、解析异常、原文失效或撤回的信息不作为有效通知发布；服务故障返回 503，网页隐藏旧数据。
 
-要求 Python 3.11+；本机实际使用 Python 3.12.10。Windows PowerShell 无需激活虚拟环境：
+当前为本地 MVP 与有限体验准备阶段。最新全量测试 **713 项通过**；一次受控真实采集得到 **17 篇原始通知、15 篇合格聚合、2 篇参与候选、0 篇明确仍可报名**。这是有界样本，不能代表全校通知覆盖率或当前机会总数。[查看验收记录](docs/M4D_RESULTS.md)
 
-```powershell
-cd 'D:\AI项目\cdu信息聚合插件'
-py -3.12 -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -e '.[dev]'
+## 快速开始
+
+需要 **Python 3.11+** 和 Git。Windows 实际验证环境为 Python 3.12.10；Linux 命令已提供，原生运行仍待验证。
+
+```sh
+git clone https://github.com/A7m0spHere/cdu-opportunity-radar.git
+cd cdu-opportunity-radar
 ```
 
-Linux：
+### Windows PowerShell
+
+```powershell
+py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
+
+# 先创建本地采集库；示例仅采集计算机学院，最多尝试 3 篇
+.\.venv\Scripts\python.exe -m cdu_radar collect --db data/student.sqlite3 --source computer --limit 3
+
+# 启动网页和 RSS，同时启用定时采集
+.\.venv\Scripts\python.exe -m cdu_radar serve-rss --db data/student.sqlite3 --state-dir data/student-http --source computer --collect-interval 3600
+```
+
+### Linux / Bash
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install -e '.[dev]'
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m cdu_radar collect --db data/student.sqlite3 --source computer --limit 3
+.venv/bin/python -m cdu_radar serve-rss --db data/student.sqlite3 --state-dir data/student-http --source computer --collect-interval 3600
 ```
 
-`dev` 包含 PyYAML，用于本地 Compose 草稿静态审查，不属于产品运行依赖。安装后可使用同一虚拟环境检查归档草稿：
+打开 **<http://127.0.0.1:8765/>** 即可阅读通知，无需安装 RSS 阅读器。按 **Ctrl+C** 停止服务。
 
-```powershell
-.\.venv\Scripts\python.exe scripts/validate_m3b4_design.py
+首次 `collect` 需要访问官方站点；来源失败时查看终端中的失败类别，不将失败当作“没有通知”。没有合格通知时，网页显示正常空状态。
+
+### 采集与刷新
+
+| 参数或操作 | 含义 |
+| --- | --- |
+| `--collect-interval 3600` | 服务启动后立即采集一轮，此后每轮结束等待 3600 秒再采集 |
+| 省略 `--collect-interval` | 仅展示已有数据库；新入库内容仍由发布器刷新 |
+| `--source computer --source msys` | 选择多个既有来源；定时采集仅允许已验证且已实现适配器的来源 |
+| `serve-rss` 省略 `--source` | 对所有既有已验证、已实现适配器的来源启用采集；仍需非零采集间隔 |
+| `serve-rss --limit 3` | 每轮每来源最多尝试 3 篇，当前定时采集只读取第一页 |
+| 独立 `collect --max-pages 2 --limit 6` | 在所选来源支持分页时，按上限执行一次有界采集 |
+
+网页约每 5 秒获取一次数据，这与访问官方站点的采集间隔分别控制。默认自动路径不调用 LLM，不需要模型 Key、QQ、AstrBot 或 NapCat。
+
+## 信息与接口
+
+```text
+既有可信官方来源 → 采集与解析 → 分类、去重及质量检查 → 网页 / RSS
 ```
 
-Linux 使用 `.venv/bin/python scripts/validate_m3b4_design.py`。脚本只读取本地草稿，不执行 Docker、SSH、插件加载或消息发送；检查通过不解除上述 NO-GO。
+| 路径 | 内容 |
+| --- | --- |
+| `/` | 学生通知页，默认最新通知 |
+| `/api/notices` | 同源只读 JSON，与 RSS 共用质量和失效门禁 |
+| `/feed.xml` | 全部通过质量检查的聚合通知，包含未知状态和历史信息 |
+| `/current.xml` | 有明确时间依据、符合规则条件的可能参与机会，具体资格仍需核对原文 |
+| `/history.xml` | 明确截止、已举办等历史信息；历史不等于报名已截止 |
+| `/health` | 服务当前能否提供有效数据快照 |
+| `/approved.xml` | **410 Gone**，旧人工批准 Feed 已退役 |
 
-## 本地运行
+报名状态分为“可能仍可参与”“明确已经截止”“报名状态未知”。未知不会自动变成开放或已截止；规则已识别为资格不符合的通知不进入当前机会。自动分类只供浏览，不代表发布单位的官方认定。
 
-### 当前：自动聚合，无需审批
+**时间字段各有含义：** 来源发布日期取自有依据的网页元数据，缺失就显示未知；系统采集时间表示最近成功解析；RSS `pubDate` 表示首次聚合发布登记时间。后两者都不能替代原文发布日期。
 
-```powershell
-.\.venv\Scripts\python.exe -m cdu_radar collect --db data/auto.sqlite3 --source computer --limit 3
-.\.venv\Scripts\python.exe -m cdu_radar serve-rss --db data/auto.sqlite3 --state-dir data/auto-http --collect-interval 3600 --source computer
-```
+## 当前边界
 
-直接打开 [学生通知页](http://127.0.0.1:8765/)，也可订阅 [全部通知](http://127.0.0.1:8765/feed.xml) 或 [当前机会](http://127.0.0.1:8765/current.xml)。没有明确报名期限的通知不会因为刚被采集就进入当前机会；当前机会可以为空，默认网页仍展示最新聚合内容。Linux 将 Python 路径换为 `.venv/bin/python`。[学生页指南](docs/STUDENT_PAGE.md)包含同源接口、未知状态、故障处理和离线预览。
+- **来源覆盖**：当前实现并验证了 9 个采集来源。来源目录中的候选栏目、可访问页面和 `pending` 单位不等于可自动发布来源。[来源清单](docs/SOURCES.md)
+- **采集覆盖**：定时任务有文章和页数上限，尚无完整的跨轮补采与旧通知复查调度；集中新增或较早通知更新可能未被覆盖。
+- **有效性**：最近成功原文检查超过 72 小时的通知停止公开，等待重新采集。数据库中的历史记录保留；历史列表也受有效性检查约束。
+- **内容理解**：摘要为原文节选，日期与资格采用保守规则。附件仅记录名称和链接，尚未读取其正文；多赛道或不明确的条件保持未知。
+- **访问方式**：核心服务只监听环回地址，`127.0.0.1` 仅供服务所在设备访问。另有须显式启用、按具体设备 IP 限制的[局域网预览方案](docs/LAN_PREVIEW.md)。
+- **验证范围**：Windows 本机、手机尺寸视口和故障隐藏已验证；真实手机跨设备、Linux 原生及长期无人值守运行尚未验收。目前没有生产部署或公网体验站。
 
-### 以下为历史分析、评测和审批流程
+使用本地 SQLite 回滚日志模式，服务拒绝 WAL；数据库与服务状态目录分开放置。不要把仓库、数据库或日志目录作为静态网站公开。正文链接由浏览器直接访问官方网页，本服务不自动报名、登录或收集学生个人资料。
 
-### M3-A 安全 HTTP 与隔离合成联调
+## 开发与验证
 
-先使用全新目录的合成初始化条目，不能把真实历史通知导入或批准成测试消息：
-
-```powershell
-.\.venv\Scripts\python.exe -m cdu_radar rss-synthetic init --directory artifacts/m3a-lab --ttl 3600
-.\.venv\Scripts\python.exe -m cdu_radar serve-approved-rss --db artifacts/m3a-lab/synthetic.sqlite3 --state-dir artifacts/m3a-lab/http-state --bind 127.0.0.1 --port 8765 --interval 10 --max-age 30
-# 另一终端：仅在确认订阅初始化历史后增加第二条：
-.\.venv\Scripts\python.exe -m cdu_radar rss-synthetic add --directory artifacts/m3a-lab --ttl 3600
-```
-
-服务只提供 GET/HEAD `/approved.xml`、`/health`，不会把 data 或状态目录作为文件服务器。后台复用有效人工批准导出，每个读请求复核源/审批/时间；变更或故障先返回 503，安全刷新后恢复，没有旧 XML 回退。默认只绑定环回，不允许直接 LAN/公网绑定；当前要求本地 SQLite 回滚日志模式，WAL 拒绝服务。
-
-Windows/Linux 与网络权限要求见 [HTTP 指南](docs/RSS_HTTP.md)，实际验收边界见 [M3-A 记录](docs/M3A_RESULTS.md)，非空初始化及待用户执行的真实测试群流程见 [测试手册](docs/M3A_TEST_GROUP.md)。合法空 Feed 未必能建立插件历史，不能把 Mock 通过当作真实群联调通过。
-
-M3-B 的[早期分支审查与现场检查方案](docs/M3B_PREFLIGHT.md)已留档；后续已完成生产只读调查，尚未安装 RSS 插件或发送测试群消息。
-
-M3-B.4 已完成专用固定会话 RSS 插件的离线实现：默认关闭、无聊天命令或 LLM 工具、持久去重和有界投递预算；[历史方案与部署申请设计](docs/M3B4_MINIMAL_PLUGIN.md)。生产环境仅做过只读调查，插件和单 RSS 容器尚未安装/启动，Mock 不代表 QQ 送达。
-
-M3-B.5 审查修复了取消/超时被吞掉后的状态与停止延迟，候选升级为 v0.1.1；[交付审查、固定 SDK 验证及当时的五份申请](docs/M3B5_REVIEW.md)保留作历史记录。后续以文首 M3-B.8 决策为准，不据这些旧申请继续生产预检、安装或发送。
-
-### M2-C 人工审核与已批准 RSS
-
-无需模型或 Key。管理员查看原文及已有证据，填写独立草稿，先预览再用具体指纹确认。原文版本变化后批准失效，重新入队；重复导出保留 GUID 和首次发布时间。未知资格/日期/AI 规则明确保留，不能变成已核实断言。
+安装测试依赖并运行离线回归：
 
 ```powershell
-.\.venv\Scripts\python.exe -m cdu_radar review list --db data/m2c.sqlite3
-.\.venv\Scripts\python.exe -m cdu_radar review show 34 --db data/m2c.sqlite3
-.\.venv\Scripts\python.exe -m cdu_radar review history 34 --db data/m2c.sqlite3
-.\.venv\Scripts\python.exe -m cdu_radar export-approved-rss --db data/m2c.sqlite3 --output data/approved.xml --dry-run
-```
-
-本机 `data/m2c.sqlite3` 是保留历史数据的备份副本，已迁移至 v5；历史 36 条未批准，实际 `approved.xml` 是合法空 Feed。新环境先准备自己的采集库/副本。完整批准、拒绝、暂缓、撤销、草稿与确认步骤见 [发布指南](docs/PUBLICATION.md)，离线证据见 [M2-C 验收](docs/M2C_RESULTS.md)，未来测试群方案见 [AstrBot 交接](docs/ASTRBOT_HANDOFF.md)。合成 [RSS 示例](docs/examples/approved-example.xml) 不代表真实发布。
-
-本地审批/单次导出命令只有显式 `--confirm` 才修改审批或写 XML；安全 HTTP 后台会自动刷新已经有效的批准，不创建人工批准。旧 `review set --confirm` 保留为分析审核，不能出版；review list 现为发布队列，不自动重新分析。不要把原始 feed.xml 交给正式订阅器，也不要直接公开整个 data 目录。单次静态导出不能代替带失效守门的 HTTP 服务；当前没有部署服务器刷新服务。
-
-### M2-B 模型分析
-
-配置、预览、发送、缓存和对照评测见 [docs/LLM.md](docs/LLM.md)。配置从环境变量读取，默认预览、每批 3 条；API Key 不写入代码、Git 或日志。使用独立 `data/m2b.sqlite3`，保留原始通知和人工标签；对照命令只读取已有模型缓存，不发付费请求。
-
-首轮指定模型真实尝试 36 条，只有 5 条通过校验、31 条失败待审；当前不适合自动筛选发布。包括失败保留的统计不能当成模型能力提升，完整结果和实际用量见 [验证记录](docs/VALIDATION.md)。
-
-```powershell
-.\.venv\Scripts\python.exe -m cdu_radar llm analyze --dry-run --output data/m2b-prompt-preview.json
-.\.venv\Scripts\python.exe -m cdu_radar llm analyze --limit 3 --send --output data/m2b-batch.json
-.\.venv\Scripts\python.exe -m cdu_radar llm compare --output data/m2b-comparison.json --errors-output data/m2b-errors.json
-```
-
-### M2-A 离线规则、人工标注与评测
-
-本轮使用独立 `data/m2a.sqlite3`，由 M1 的 36 篇通知备份复制，原 M1 数据库保持不变。新环境先完成采集；已有 M1 数据可用 Python 标准库 SQLite backup 建副本：
-
-```powershell
-.\.venv\Scripts\python.exe -c "import sqlite3; from pathlib import Path; source=sqlite3.connect('file:data/m1.sqlite3?mode=ro',uri=True); Path('data/m2a.sqlite3').open('xb').close(); target=sqlite3.connect('data/m2a.sqlite3'); source.backup(target); target.close(); source.close()"
-```
-
-上述复制命令只用于第一次建立副本，目标文件已存在时会拒绝操作，保留已有分析和标签。
-
-```powershell
-.\.venv\Scripts\python.exe -m cdu_radar analyze --as-of 2026-10-13
-.\.venv\Scripts\python.exe -m cdu_radar label export --as-of 2026-10-13
-# 人工编辑 data/m2a-labels.csv，明确 label_status=human 后导入：
-.\.venv\Scripts\python.exe -m cdu_radar label import --input data/m2a-labels.csv --labeler 本人
-.\.venv\Scripts\python.exe -m cdu_radar evaluate --as-of 2026-10-13
-.\.venv\Scripts\python.exe -m cdu_radar review list --as-of 2026-10-13
-```
-
-新命令默认 `--db data/m2a.sqlite3`，库不存在时报错，不生成伪空样本。`--as-of` 固定北京时间参考点，日期单值代表该日 00:00；省略时用当前北京时间。`--rules 文件` 可修改关键词配置，无需改 Python。
-
-输出：`data/m2a-analysis.json`、`data/m2a-labels.csv`、`data/m2a-evaluation.json`。CSV 有明确独立的 `predicted_*` 和人工字段；新行是未标注状态。导出默认拒绝覆盖已有工作表，需要时用另一 output，或先导入再显式 `--overwrite`。**人工标签不等于审批，程序预测不等于人工真值。**
-
-事实、推断、未知分别保存；只有明确年份和日期用途才进入时间字段。多赛道时间不强制归成一个日期，AI 可适用不等于规则允许，学院来源不等于所有本科生有资格。成功结果缓存同时考虑正文和完整输入；原文变化重新待审，旧人工结论留存。分析失败只保留错误类型并待审核。
-
-首批 36 篇已由用户完成真实推荐标注并导入：9 条推荐、27 条不推荐。规则基线 Precision=31.58%、Recall=66.67%、F1=42.86%；资格、时间和 AI 政策等细分真值尚未填写。评测以“保留候选（retain + uncertain）”为正例，输出混淆矩阵、未确定比例和错例；不是推送批准率。完整字段和方法见 [分析契约](docs/ANALYSIS_CONTRACT.md) 与 [人工标注指南](docs/LABELING.md)。
-
-### 原始采集与 RSS（保持兼容）
-
-```powershell
-.\.venv\Scripts\python.exe -m cdu_radar sources
-.\.venv\Scripts\python.exe -m cdu_radar collect --limit 3 --max-pages 1 --no-env-proxy
-.\.venv\Scripts\python.exe -m cdu_radar export-rss --limit 30 --output data/feed.xml
+.\.venv\Scripts\python.exe -m pip install -e '.[dev]'
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-默认采集 9 个已实现适配器的来源，每来源跨页最多尝试 3 篇正文，默认最多 1 页。默认数据库 `data/radar.sqlite3`；M1 会自动做兼容升级，保留原有记录。升级前建议用 SQLite backup 保留 M0 数据，本轮验证实际使用独立 `data/m1.sqlite3`，原库没有升级。重复运行刷新 `last_seen_at`，正文、标题、发布日期或链接/附件变化更新原记录及 `updated_at`。同一最终官方 URL 只保存一篇，保留多个发现栏目和实际原文发布单位。
+Linux 将解释器替换为 `.venv/bin/python`。常规测试使用隔离数据库、裁剪 HTML、Mock 与环回 HTTP，不访问外网或调用付费模型。`requirements-lock.txt` 是已验证环境的依赖快照，不代表所有平台均已通过。
 
-可单独选择 `--source computer`、`business`、`innovation`、`msys`、`ftva`、`pharm`、`ele`、`jztm`、`sfxy`，`--source` 可重复指定。`--max-pages` 控制最大页数，`--limit` 控制每来源最大文章尝试数；未接入栏目不会被默认采集。运行 JSON 保持 M0 的列表结构并增加分类/耗时/分页统计，stderr 汇总成功/失败来源、新增、更新、重复、解析失败数及耗时。
+复现实采可使用 `scripts/validate_trial_live.py --directory artifacts/trial-new`，须通过上述虚拟环境 Python 从仓库根目录执行，输出目录必须不存在。**该脚本会访问既有官方来源**；测试数据库、日志与采集结果留在被 Git 忽略的本地目录。真实 HTML 夹具的裁剪和出处见 [样本说明](tests/fixtures/README.md)。
 
-M1 登记 42 个单位/平台、152 个候选栏目；152 个可访问、139 个发现文章链接，9 个完整采集验证通过。发现和访问成功不等于已实现解析，也不代表通知适合学生报名。
+提交问题时，请提供来源 URL、失败类别、复现命令和必要的脱敏输出。通知类别或日期解析修复应补充边界样例；不要提交数据库、完整学生名单、凭据或私人日志。
 
-## 本机创新创业学院连接诊断与复现
+## 文档
 
-本机系统 DNS 返回 `198.18.0.11` / `2001:2::2b`，公共 DNS 返回 `202.115.80.140`；系统路径 TLS 关闭，显式公共地址保持原域名 SNI 后证书校验和 HTTP 请求通过。环境代理变量为空，`--no-env-proxy` 无法改变透明网络层的 DNS。具体证据见 `docs/VALIDATION.md`，这是本机环境诊断，不能推广为所有设备的 DNS 状态。
+| 主题 | 入口 |
+| --- | --- |
+| 学生页运行、JSON 契约与离线预览 | [STUDENT_PAGE](docs/STUDENT_PAGE.md) |
+| 自动发布、来源与时间状态 | [AUTO_PUBLICATION](docs/AUTO_PUBLICATION.md) |
+| 局域网预览、手动验证与停止 | [LAN_PREVIEW](docs/LAN_PREVIEW.md) |
+| 最近真实采集和测试证据 | [M4-D 验收](docs/M4D_RESULTS.md) |
+| 架构、来源目录与开发计划 | [架构](docs/ARCHITECTURE.md) · [来源](docs/SOURCES.md) · [计划](docs/PLAN.md) |
+| 历史分析和发布设计 | [分析契约](docs/ANALYSIS_CONTRACT.md) · [旧审批设计](docs/PUBLICATION.md) · [路线冻结决策](docs/M3B8_ROUTE_DECISION.md) |
 
-```powershell
-.\.venv\Scripts\python.exe -m scripts.diagnose_source --public-dns
-.\.venv\Scripts\python.exe -m cdu_radar collect --db data/m1.sqlite3 --source innovation --limit 3 --max-pages 1 --no-env-proxy --resolve cxcyxy.cdu.edu.cn=202.115.80.140
-.\.venv\Scripts\python.exe -m cdu_radar export-rss --db data/m1.sqlite3 --limit 50 --output data/m1-feed.xml
-.\.venv\Scripts\python.exe -m scripts.validate_local --baseline data/m0-backup.sqlite3
-```
+M2–M3 文档保留用于理解历史数据和实验，不是当前启动指南。旧审批确认写入、`serve-approved-rss` 已停用；旧 `export-rss` 只作技术诊断，不能替代带失效保护的自动 Feed。QQ 插件和独立 OneBot 发送路线继续冻结。
 
-DNS 地址可能变化，先运行诊断确认，不要长期依赖快照中的固定 IP。`--resolve` 可重复，只接受已登记域名和公网 IP，保留 TLS 验证，不修改系统 DNS。师范学院本机也需要显式解析覆盖，其本轮地址见验证记录。网络恢复后可省略覆盖；失败不会永久禁用来源，下一次 collect 仍会尝试。
+## 许可证
 
-`scripts` 维护工具需要在仓库目录执行；wheel 分发包含主采集 CLI 和机器来源配置。
+Copyright (C) 2026 CDU Opportunity Radar contributors.
 
-所有子命令均支持 `--db 路径`。`--limit` 必须大于 0。退出码：0 成功；1 至少一个来源/文章采集失败（其他来源仍继续）；2 参数、文件或数据库错误。失败不会把空正文入库，也不会清除已存通知。来源状态和错误可用 `sources` 命令查询。
+本项目原创源代码与文档采用 **GNU Affero General Public License v3.0 only（`AGPL-3.0-only`）**，完整条款见 [LICENSE](LICENSE)。允许使用、修改、再分发和商用；分发时应保留相关声明并满足对应源码等义务。修改版本通过网络向用户提供交互服务时，应显著、免费地向这些用户提供实际运行版本的对应源码获取方式。
 
-analyze 返回 1 表示至少一条分析失败；标签不足的 evaluate 返回 0，同时报告空指标和样本不足。它表示评测流程运行成功，不表示筛选效果通过。
+部署修改版时，可在网页中设置“本版本源码”入口，指向包含自身修改的对应版本源码，并提供必要的构建、安装和运行脚本。生产数据库、密码和学生个人数据不作为源码公开。项目按许可证条款提供，不附带保证。
 
-请求默认采用环境代理；本机使用 `--no-env-proxy` 完成直连验证。需要代理时省略此参数。请求保留 TLS 证书验证，不降低 TLS 安全策略。
-
-## 请求策略与数据
-
-- User-Agent：`cdu-opportunity-radar/0.1 (local research; low-frequency notice collector)`。
-- 每个请求阶段超时 20 秒；网络错误或 HTTP 502/503/504 最多额外重试 2 次，退避 2/4 秒。401、403、429 不重试。
-- 全局请求间隔至少 2 秒，遵守 robots 的 Crawl-delay 和 Request-rate；最多跟随 5 次重定向，每个目标均限定为成都大学官方域名并核查 robots。
-- robots 404/410 视为未提供规则；200 中解析可用规则，无规则（包括 HTML 维护页）会明确警告。robots 网络错误、5xx、401/403 均停止该站采集。使用标准库 `RobotFileParser`，并非完整 RFC 9309 实现。
-- 图片、需要认证/验证码的页面不处理；纯图片或空正文明确失败。正文原始链接单独记录，附件仅保存名称/URL，不下载或解析 PDF/Office，不读取报名表或附件中的个人资料。
-- `published_at` 是网页发布日期（仅日期）；`discovered_at` 是首次发现 UTC 时间；`application_deadline` 当前为空，不从正文日期猜测截止时间。RSS 对未知发布日期使用首次发现时间，并在摘要中写清楚；日期只有天级精度时，RSS 使用北京时间 00:00 表示。
-- 数据库、Feed、日志和原始页面仅保存在本地，被 `.gitignore` 排除。`request_events` 记录 URL、状态码、请求时间、重试序号、耗时和错误；`collection_runs` 记录每来源运行结果。运行 JSON 写 stdout，请求日志写 stderr。
-
-## 已实现、已验证与计划
-
-来源清单和现状见 [docs/SOURCES.md](docs/SOURCES.md)，本机真实运行证据见 [docs/VALIDATION.md](docs/VALIDATION.md)。结构见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)，M0 计划及下一轮需求见 [docs/PLAN.md](docs/PLAN.md)。常规 pytest 只使用裁剪 HTML 和 Mock，不访问互联网；来源网页可能随时变化，失败时请记录并重验。
-
-若要复现本轮具体依赖版本，可在新虚拟环境先安装 `requirements-lock.txt`，再执行 `pip install --no-deps -e .`。这是本轮环境快照，不保证所有未来平台都完全兼容。
+官方通知原文、测试夹具中的第三方网页片段、校名标识与第三方依赖不因本项目采用 AGPL 而被重新授权；各自的权利与使用条件仍需分别遵守。样本出处见 [HTML 样本说明](tests/fixtures/README.md)。本项目不代表成都大学或各发布单位的官方服务，通知详情与参与条件以官方原文为准。

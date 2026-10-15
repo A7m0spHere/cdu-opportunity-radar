@@ -1,5 +1,11 @@
 # 系统结构
 
+## M4-C 学生页
+
+同一 Python `serve-rss` 提供固定网页资源和 `/api/notices`，没有独立应用服务。`AutoFeedController` 生成 RSS 时同时生成经过字段裁剪的公开快照；JSON 响应在原 read_gate 的数据库只读事务和响应锁内输出，复核来源、内容版本、时间和快照时效。静态 HTML 不嵌通知数据，失败时仍能加载界面；JSON/网络/核验失效会清空浏览器卡片。
+
+前端原生 DOM/textContent，不使用外部脚本、CORS、客户端存储或写接口。白名单路由与内容类型明确，未知路径/参数拒绝。新增 source_checked_at 保留真实系统采集时点，原文发布日期与首次收录另列；行政通知不因未来截止进入当前机会。来源目录每次实时计划加载一次，减少冗余查询但不缓存跨请求的质量结论。详见 [学生页契约](STUDENT_PAGE.md)。
+
 ## M4-B 当前结构
 
 `collect → Adapter → Store + notice_health → AutoRepository（规则分类、时间与来源质量）→ AutoFeedController → RSS`。HTTP 路由、OS 状态锁与保持至响应完成的 SQLite 回滚读事务复用 M3-A；自动发布状态使用独立 `auto_publications`，不查询人工审批来决定发布，不消费人工队列、标签或 LLM 缓存。

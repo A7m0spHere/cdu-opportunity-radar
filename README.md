@@ -2,7 +2,7 @@
 
 面向成都大学学生的校园机会自动聚合平台。仅从既有、已验证的官方来源采集通知，解析、分类、按原文 URL 去重并检查质量后，自动进入 RSS。每条信息带官方来源、原文链接、可核实的来源日期和可追溯的原文节选；报名状态未知、已截止与历史信息分开标记。
 
-**当前路线：M4-B 自动聚合发布。无需逐条人工审批、确认指纹、付费模型或 QQ/AstrBot。** 新入口为 `serve-rss` 的 `/feed.xml`，另有 `/current.xml`、`/history.xml`。沿用 M3-A 的数据库响应守门和 503 保护，不静态托管 XML。[最小运行指南、数据契约和弃用说明](docs/AUTO_PUBLICATION.md)；[M4-B 测试和 M4-A 真实样本回放](docs/M4B_RESULTS.md)。目前仅本机运行，未部署服务器。
+**当前路线：M4-C 学生通知页 + M4-B 自动聚合。无需 RSS 阅读器、逐条人工审批、付费模型或 QQ/AstrBot。** 启动 `serve-rss` 后打开 `/` 即可浏览最新通知，筛选当前机会/历史/分类并打开官方原文。网页和 `/feed.xml`、`/current.xml`、`/history.xml` 共用质量与 503 门禁。[学生页运行与数据接口](docs/STUDENT_PAGE.md)、[M4-C 验证](docs/M4C_RESULTS.md)；原自动发布契约见 [AUTO_PUBLICATION](docs/AUTO_PUBLICATION.md)。目前仅本机运行，未部署服务器。
 
 M3-B.8 的 QQ 插件与独立 OneBot 发送冻结继续生效。旧 M2-C/M3-A 审批记录只读保留；`serve-approved-rss` 和审批确认写入已停用，新服务的 `/approved.xml` 返回 410，不重定向、不标作“已人工审核”。旧规则评分、推荐标签和审批均不控制新 Feed。
 
@@ -42,7 +42,7 @@ Linux 使用 `.venv/bin/python scripts/validate_m3b4_design.py`。脚本只读�
 .\.venv\Scripts\python.exe -m cdu_radar serve-rss --db data/auto.sqlite3 --state-dir data/auto-http --collect-interval 3600 --source computer
 ```
 
-订阅 [全部通知](http://127.0.0.1:8765/feed.xml) 或 [当前机会](http://127.0.0.1:8765/current.xml)。没有明确报名期限的通知不会因为刚被采集就进入当前机会；当前机会可以为空。Linux 将 Python 路径换为 `.venv/bin/python`。完整流程见 [自动发布指南](docs/AUTO_PUBLICATION.md)。
+直接打开 [学生通知页](http://127.0.0.1:8765/)，也可订阅 [全部通知](http://127.0.0.1:8765/feed.xml) 或 [当前机会](http://127.0.0.1:8765/current.xml)。没有明确报名期限的通知不会因为刚被采集就进入当前机会；当前机会可以为空，默认网页仍展示最新聚合内容。Linux 将 Python 路径换为 `.venv/bin/python`。[学生页指南](docs/STUDENT_PAGE.md)包含同源接口、未知状态、故障处理和离线预览。
 
 ### 以下为历史分析、评测和审批流程
 

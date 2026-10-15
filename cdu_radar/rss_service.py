@@ -66,6 +66,7 @@ class Snapshot:
     etag: str
     plan_hash: str
     validated_at: float
+    data: dict | None = None
 
 
 class FeedController:
@@ -73,9 +74,13 @@ class FeedController:
     paths = ('/approved.xml',)
     retired_paths = ()
     state_kind = 'm3a-rss-state-v1'
+    static_assets = {}
 
     def response_snapshot(self, snapshot, path):
         return snapshot
+
+    def response_content_type(self, path):
+        return 'application/rss+xml; charset=utf-8'
     def __init__(self, db, state_dir, *, max_age=30, clock=reference_datetime, monotonic=time.monotonic):
         self.db=Path(db).resolve()
         if not self.db.is_file():raise ValueError('Source database does not exist')
@@ -214,12 +219,18 @@ def make_server(controller, host='127.0.0.1', port=8765):
         def reply(self, status, body, content_type='text/plain; charset=utf-8', etag=None):
             self.send_response(status);self.send_header('Content-Type',content_type)
             self.send_header('Cache-Control','no-store, max-age=0');self.send_header('X-Content-Type-Options','nosniff')
+            self.send_header('Referrer-Policy','no-referrer')
+            self.send_header('Cross-Origin-Resource-Policy','same-origin')
+            self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             if etag:self.send_header('ETag',etag)
             if status==503:self.send_header('Retry-After','1')
             if status==405:self.send_header('Allow','GET, HEAD')
             self.send_header('Content-Length',str(len(body)));self.end_headers()
             if self.command!='HEAD' and status!=304:self.wfile.write(body);self.wfile.flush()
         def do_GET(self):
+            if self.path in controller.static_assets:
+                body,content_type=controller.static_assets[self.path]
+                self.reply(200,body,content_type);return
             if self.path in controller.retired_paths:
                 self.reply(410,b'Human-approved feed retired. Subscribe to /feed.xml (automatic aggregation).\n');return
             if self.path not in {*controller.paths,'/health'}:
@@ -231,9 +242,9 @@ def make_server(controller, host='127.0.0.1', port=8765):
                     if snapshot is None:self.reply(503,b'RSS temporarily unavailable\n')
                     else:
                         snapshot=controller.response_snapshot(snapshot,self.path)
-                        if etag_matches(self.headers.get('If-None-Match'),snapshot.etag):self.reply(304,b'',etag=snapshot.etag)
-                        else:self.reply(200,snapshot.body,'application/rss+xml; charset=utf-8',snapshot.etag)
-            except (BrokenPipeError,ConnectionResetError,TimeoutError):pass
+                        if snapshot.etag and etag_matches(self.headers.get('If-None-Match'),snapshot.etag):self.reply(304,b'',etag=snapshot.etag)
+                        else:self.reply(200,snapshot.body,controller.response_content_type(self.path),snapshot.etag or None)
+            except (ConnectionError,TimeoutError):pass
         do_HEAD=do_GET
         def forbidden(self):self.reply(405,b'Read-only endpoint\n')
         do_POST=do_PUT=do_PATCH=do_DELETE=do_OPTIONS=forbidden

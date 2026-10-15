@@ -82,6 +82,45 @@ def test_unknown_historical_not_closed_and_empty_current(auto_service):
     assert payload['counts']['current']==0 and not entries(s,'/current.xml')
 
 
+@pytest.mark.parametrize('body,status,listing',[
+    (BODY.replace('我校在校本科生','仅限教师'),'unknown','unknown'),
+    (BODY.replace('我校在校本科生','仅限北京大学在校本科生'),'unknown','unknown'),
+    (BODY.replace('我校在校本科生','仅面向研究生'),'unknown','unknown'),
+    (BODY+'\n报名已截止，不再接受新报名。','closed','history'),
+    (BODY+'\n报名已经截止，不再接受新报名。','closed','history'),
+    (BODY+'\n并非报名已截止，仍按原通知时间办理。','possible','current'),
+    (BODY+'\n如果报名已截止，请等待下一期通知。','possible','current'),
+    (BODY.replace('参与对象：我校在校本科生。','参与对象未提供。'),'possible','current'),
+    ('合成竞赛通知，参与对象和截止日期未提供。报名已截止，不再接受新报名。','closed','history'),
+    (BODY.replace('我校在校本科生','仅限教师')+'\n报名已截止。','closed','history'),
+],ids=['teachers-only','other-university-only','graduate-only','closed-short','closed-long',
+       'negated-closure','conditional-closure','audience-unknown','closed-without-date','ineligible-and-closed'])
+def test_eligibility_and_closure_updates_agree_across_api_and_rss(auto_service,body,status,listing):
+    store,c,s,_,_=auto_service
+    original=entries(s)[0]
+    tag=request(s,'/current.xml')[1]['ETag']
+    add(store,body=body)
+    # A changed source invalidates both data channels, including conditional RSS.
+    assert api(s)[0]==503
+    assert request(s,'/current.xml',headers={'If-None-Match':tag})[0]==503
+    assert c.refresh()
+    payload=api(s)[2]
+    item=payload['items'][0]
+    assert (item['registration_status'],item['listing'])==(status,listing)
+    assert payload['counts']=={'all':1,'current':int(listing=='current'),
+        'history':int(listing=='history'),'unknown':int(listing=='unknown')}
+    all_entries=entries(s)
+    assert len(all_entries)==1
+    updated=all_entries[0]
+    assert (updated.id,updated.published)==(original.id,original.published)
+    assert item['guid']==updated.id and item['source_url']==updated.link==URL
+    root=ET.fromstring(request(s,'/feed.xml')[2]);rss=root.find('./channel/item')
+    assert rss.findtext('{'+NS+'}registration_status')==status
+    assert rss.findtext('{'+NS+'}listing')==listing
+    for scope in ('current','history'):
+        assert {e.id for e in entries(s,'/'+scope+'.xml')}==({item['guid']} if listing==scope else set())
+
+
 @pytest.mark.parametrize('title',[
     '教师科研项目申报通知','学科竞赛经费报销通知','人工智能岗位聘任通知',
     '学科竞赛获奖推荐名单公示',

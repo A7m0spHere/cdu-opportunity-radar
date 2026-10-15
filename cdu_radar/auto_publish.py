@@ -136,10 +136,11 @@ def describe(row, publisher, now, analyzer):
     if source_date and now.date()-date.fromisoformat(source_date)>HISTORICAL_AGE:historical=True
     status = 'unknown'
     deadlines = [f['value'] for key,f in facts.items() if key in {'registration_deadline','internal_deadline'} and f]
-    explicit_closed = any(re.search(r'报名已结束|报名已经截止|征集已结束|停止报名', c) and
+    explicit_closed = any(re.search(r'报名已结束|报名已(?:经)?截止|征集已结束|停止报名', c) and
         not re.search(r'并非|不是|尚未|是否|若|如果', c) for c in re.split(r'[。；\n]', content))
+    ineligible = bool(result and result.eligibility_status=='ineligible')
     if explicit_closed or any(deadline_moment(v)<now for v in deadlines):status='closed'
-    elif facts['registration_deadline'] and not historical and not administrative:
+    elif facts['registration_deadline'] and not historical and not administrative and not ineligible:
         start_fact = facts['registration_start_date']
         # Conflicting, tentative or yearless constraints never imply openness.
         uncertain = bool(result and any(e.kind=='unknown' and e.field in facts for e in result.evidence))

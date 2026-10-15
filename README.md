@@ -4,6 +4,8 @@
 
 M3-A 增加只读环回 RSS HTTP 服务、安全刷新/失效暂停和隔离合成联调。已做本地 HTTP 与 Mock 验证，尚未部署公网或连接实际 AstrBot/QQ。
 
+**当前路线（M3-B.8）：生产 AstrBot 插件安装与独立 OneBot 自动发送均为 NO-GO。** 暂时保留人工审批与安全 RSS 发布能力，不启用自动 QQ 推送；停止生产插件加载相关开发、扩展扫描和反复补证。只有新的实质证据才重新评审，后续以[最终路线决策与唯一有界补证申请](docs/M3B8_ROUTE_DECISION.md)为准。该申请尚未获准执行，RSS 路线选择也不代表服务器部署获批。
+
 **原始 Feed 仍是技术验证 Feed**，包括获奖新闻和普通通知；`approved.xml` 则只包含当前有效、明确人工批准的内容。规则预测、模型结果、推荐标签和旧分析审核不会自动发布。模型只在配置有效且显式 --send 时调用，目前没有 QQ 群订阅或公网部署。
 
 ## 安装
@@ -22,6 +24,14 @@ Linux：
 python3 -m venv .venv
 .venv/bin/python -m pip install -e '.[dev]'
 ```
+
+`dev` 包含 PyYAML，用于本地 Compose 草稿静态审查，不属于产品运行依赖。安装后可使用同一虚拟环境检查归档草稿：
+
+```powershell
+.\.venv\Scripts\python.exe scripts/validate_m3b4_design.py
+```
+
+Linux 使用 `.venv/bin/python scripts/validate_m3b4_design.py`。脚本只读取本地草稿，不执行 Docker、SSH、插件加载或消息发送；检查通过不解除上述 NO-GO。
 
 ## 本地运行
 
@@ -42,9 +52,9 @@ Windows/Linux 与网络权限要求见 [HTTP 指南](docs/RSS_HTTP.md)，实际�
 
 M3-B 的[早期分支审查与现场检查方案](docs/M3B_PREFLIGHT.md)已留档；后续已完成生产只读调查，尚未安装 RSS 插件或发送测试群消息。
 
-M3-B.4 已完成专用固定会话 RSS 插件的离线实现：默认关闭、无聊天命令或 LLM 工具、持久去重和有界投递预算；[方案与部署审批清单](docs/M3B4_MINIMAL_PLUGIN.md)。生产环境仅做过只读调查，插件和单 RSS 容器尚未安装/启动，Mock 不代表 QQ 送达。
+M3-B.4 已完成专用固定会话 RSS 插件的离线实现：默认关闭、无聊天命令或 LLM 工具、持久去重和有界投递预算；[历史方案与部署申请设计](docs/M3B4_MINIMAL_PLUGIN.md)。生产环境仅做过只读调查，插件和单 RSS 容器尚未安装/启动，Mock 不代表 QQ 送达。
 
-M3-B.5 审查修复了取消/超时被吞掉后的状态与停止延迟，候选升级为 v0.1.1；[交付审查、固定 SDK 验证及五份独立申请](docs/M3B5_REVIEW.md)。当前只建议进一步只读预检，未获生产部署或消息发送授权。
+M3-B.5 审查修复了取消/超时被吞掉后的状态与停止延迟，候选升级为 v0.1.1；[交付审查、固定 SDK 验证及当时的五份申请](docs/M3B5_REVIEW.md)保留作历史记录。后续以文首 M3-B.8 决策为准，不据这些旧申请继续生产预检、安装或发送。
 
 ### M2-C 人工审核与已批准 RSS
 

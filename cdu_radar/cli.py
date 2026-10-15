@@ -96,6 +96,14 @@ def main(argv=None) -> int:
     auto_server.add_argument('--source',action='append')
     auto_server.add_argument('--limit',type=positive_int,default=3)
     auto_server.add_argument('--no-env-proxy',action='store_true')
+    lan=sub.add_parser('serve-lan-preview',help='Explicit device-allowlisted read proxy; never changes the loopback RSS listener')
+    lan.add_argument('--bind',required=True,help='Specific RFC1918 device IPv4, never 0.0.0.0')
+    lan.add_argument('--allow-client',action='append',required=True,help='Specific allowed device IPv4; repeatable, at most 8')
+    lan.add_argument('--port',type=int,default=8780)
+    lan.add_argument('--upstream-port',type=int,default=8765)
+    lan_mode=lan.add_mutually_exclusive_group()
+    lan_mode.add_argument('--check-only',action='store_true',help='Validate configuration and local public upstream; open no listener')
+    lan_mode.add_argument('--enable-lan',action='store_true',help='Explicitly enable the separate private-address listener')
     synthetic=sub.add_parser('rss-synthetic',help='Separate synthetic-only lab; never uses existing user data')
     synthetic_actions=synthetic.add_subparsers(dest='synthetic_action',required=True)
     for name in ['init','add','revoke','update','approve']:
@@ -129,6 +137,9 @@ def main(argv=None) -> int:
         command.add_argument("--as-of")
         command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
+    if args.command=='serve-lan-preview':
+        from .lan_preview import serve_command
+        return serve_command(args)
     if ((args.command=='review' and args.review_action in {'approve','reject','defer','revoke','set'} and getattr(args,'confirm',None))
             or args.command=='export-approved-rss' and args.confirm
             or args.command=='serve-approved-rss'):

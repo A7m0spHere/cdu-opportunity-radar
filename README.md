@@ -4,6 +4,8 @@
 
 **当前路线：M4-C 学生通知页 + M4-B 自动聚合。无需 RSS 阅读器、逐条人工审批、付费模型或 QQ/AstrBot。** 启动 `serve-rss` 后打开 `/` 即可浏览最新通知，筛选当前机会/历史/分类并打开官方原文。网页和 `/feed.xml`、`/current.xml`、`/history.xml` 共用质量与 503 门禁。[学生页运行与数据接口](docs/STUDENT_PAGE.md)、[M4-C 验证](docs/M4C_RESULTS.md)；原自动发布契约见 [AUTO_PUBLICATION](docs/AUTO_PUBLICATION.md)。目前仅本机运行，未部署服务器。
 
+M4-D 完成一次隔离真实采集：17 篇入库、15 篇合格聚合、2 篇参与候选、0 篇明确仍可报名；未知状态保持未知。另有需用户显式启用、按具体设备 IP 限制的[独立局域网预览方案](docs/LAN_PREVIEW.md)，核心服务仍只监听环回。本轮没有开启 LAN/公网监听，跨设备和 Linux 原生仍未验证。[实际结果与试用判断](docs/M4D_RESULTS.md)。
+
 M3-B.8 的 QQ 插件与独立 OneBot 发送冻结继续生效。旧 M2-C/M3-A 审批记录只读保留；`serve-approved-rss` 和审批确认写入已停用，新服务的 `/approved.xml` 返回 410，不重定向、不标作“已人工审核”。旧规则评分、推荐标签和审批均不控制新 Feed。
 
 旧 `export-rss` 仍是技术诊断导出，不能当作带质量守门的自动 Feed；它生成的同名文件与新 HTTP `/feed.xml` 是不同入口。下文 M1–M3 操作保留为历史参考，涉及批准写入和旧 HTTP 启动的命令不再适用。

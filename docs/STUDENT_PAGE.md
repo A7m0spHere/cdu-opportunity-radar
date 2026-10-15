@@ -1,0 +1,67 @@
+# M4-C 学生通知页
+
+打开网页即可看最新校园信息、判断报名状态并进入官方原文，不需 RSS 阅读器、账号或模型 Key。页面使用现有 Python 服务、原生 HTML/CSS/JavaScript；没有前端构建工具、第三方脚本、账号、收藏、评论、推荐算法或写入 API。
+
+## 运行
+
+在已有 Python 3.11+ 环境运行；首次安装用 `python -m pip install -e .`，测试用 `python -m pip install -e '.[dev]'`。
+
+Windows PowerShell：
+
+```powershell
+.\.venv\Scripts\python.exe -m cdu_radar collect --db data/student.sqlite3 --source computer --limit 3
+.\.venv\Scripts\python.exe -m cdu_radar serve-rss --db data/student.sqlite3 --state-dir data/student-http --collect-interval 3600 --source computer
+```
+
+随后打开 `http://127.0.0.1:8765/`。不需要额外启动 Web 服务。只浏览已有工作库时省略 `--collect-interval`；新通知入库后由原发布器刷新，网页每 5 秒检查一次。停止用 Ctrl+C。
+
+Linux：
+
+```bash
+.venv/bin/python -m cdu_radar collect --db data/student.sqlite3 --source computer --limit 3
+.venv/bin/python -m cdu_radar serve-rss --db data/student.sqlite3 --state-dir data/student-http --collect-interval 3600 --source computer
+```
+
+保持本地 SQLite 回滚日志，不使用 WAL，不将数据库放在状态目录内。Python 包包含全部网页资源，相对路径、中文及空格目录沿用 Path/SQLite URI 的跨平台处理。本轮 Windows 原生执行通过；没有可用 WSL Linux 发行版，Linux 原生运行未执行，不以源码或 wheel 检查代替。
+
+## 页面与数据语义
+
+默认是“最新通知”，按可核实的原文发布日期降序；原文未提供日期时只用首次收录时间作排序依据，并明确显示“日期未提供”。系统采集时间与原文发布分开显示，不把 RSS pubDate 当成原文发布日期。
+
+三个视图与 RSS 共用集合：
+
+| 页面视图 | RSS | 语义 |
+| --- | --- | --- |
+| 最新通知 | `/feed.xml` | 全部通过质量门禁的聚合信息，包含未知报名状态和历史通知 |
+| 当前机会 | `/current.xml` | 有明确时间依据的“可能仍可参与”，不是每名学生资格都已确认 |
+| 历史信息 | `/history.xml` | 已举办/结果报道、明确截止或落入保守历史窗口的信息 |
+
+报名 possible 显示“可能仍可参与”，closed 显示“报名已截止”，unknown 显示“报名状态未确认”。历史与报名状态是两个维度，历史中的 unknown 不会改为已截止。当前机会 0、分类 0、整体合格数据为空均是正常空状态，和服务异常分开。
+
+分类使用后端学科竞赛、科研与创新实践、AI / 计算机相关活动、校园活动、其他通知。修复了“教师科研项目申报”等行政标题因含科研/竞赛/AI 字样和未来截止而进入当前机会的问题；行政事务仍自动聚合为其他通知，未知报名不会假装已截止。原文单位 pending 的转载继续被阻止。
+
+卡片呈现标题、来源、原文日期、类别、原文节选、报名状态、系统采集时间和官方原文按钮。未知资格/截止/AI 规则不在前端生成。摘要使用 textContent；来源链接保留官方 URL，直接新窗口打开，带 noopener/noreferrer。相同 GUID 或相同原文 URL 在页面去重，不强行合并不同 URL 的通知。
+
+## 同源只读接口与安全边界
+
+`GET/HEAD /api/notices` 返回 JSON v1，数据直接投影自与 RSS 相同的已核验内存快照。它在原 `read_gate` 内响应，不重新开一条绕过门禁的数据库查询路径，也不读取 XML 静态文件。GUID、内容、分类和状态与该时刻的 Feed 相同；前端只改变展示顺序和筛选。
+
+顶层字段：schema_version、items、categories、counts、refreshed_at、data_mode、valid_for_ms、poll_after_ms。每条 item 仅含 guid、title、source_name、source_url、source_published_date（可为 null）、summary、category、registration_status、listing、source_checked_at、first_aggregated_at。不会公开原始全文、私有数据库路径、审核人、审批记录、标签、证据管理表或被阻止条目的详情。
+
+`valid_for_ms` 是距离服务器快照核验失效的剩余时长，不是来源发布时间。前端减去请求用时，超过该时限即隐藏内容；收到 503、其他错误、超时或断网也清空卡片和旧时间，不作历史缓存回退。切到后台/从浏览器历史恢复会清空旧内容并重新核验。JSON 不使用 ETag/304，避免客户端沿用没有新核验时限的响应；始终 no-store。
+
+现有响应锁、SQLite 回滚读事务、max-age、来源检查、撤回/失效、发布原子写失败与 503 规则继续有效。为避免页面请求与后台重复工作争用，将来源目录改为每次实时计划读取一次，并移除发布时两次多余的相同计划计算；仍在每次响应重新核验来源、内容版本和时间，未增加跨请求的静态状态缓存。
+
+明确的路由白名单只有 `/`、`/app.css`、`/app.js`、`/favicon.svg`、`/api/notices`、三个现有 Feed、`/health`。`/approved.xml` 保持 410。未列出的目录、参数变体、私有文件、管理路径都为 404；POST/PUT/PATCH/DELETE/OPTIONS 为 405。静态首页不含通知数据，服务故障时仍可加载并展示不可用提示。没有 CORS 开放头，所有请求同源；提供 CSP、no-referrer、nosniff 和 same-origin 资源策略。
+
+## 离线真实样本预览
+
+开发依赖安装完成后，选择不存在的新输出目录运行：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 scripts/preview_student_page.py --source-db '<M4-A worktree>/artifacts/m4a-local-v1/real-notices.sqlite3' --directory artifacts/student-page-new --as-of 2026-10-15T20:00:00+08:00 --port 8766
+```
+
+打开 `http://127.0.0.1:8766/`。源库只读备份到新隔离目录，保留原文、来源日期和原采集时间；固定的是明确标示的离线参考时点。页面显示“离线样本预览”，不会伪称原文此刻已重新联网核验。预览不采集校园网站，不访问模型、QQ 或生产服务器。已准备的私有回放可通过同模块 `serve(directory, as_of, port)` 函数恢复，仍须匹配原回放模式与参考时点。
+
+本轮 18 篇真实输入仍为 16 篇合格展示、11 篇历史、0 篇当前机会；pending 原文单位的两篇仍被阻止。15 篇报名未知、1 篇明确截止。详细验证、截图和 Git 清单见 [M4-C 结果](M4C_RESULTS.md)。

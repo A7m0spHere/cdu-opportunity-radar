@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="浏览来自成都大学官方来源的校园通知，核对报名状态，一键打开官方原文。">
+  <title>校园机会雷达 · 成都大学</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#notices">跳至通知列表</a>
+  <header class="masthead wrap">
+    <a class="brand" href="/" aria-label="校园机会雷达首页">
+      <span class="brand-mark" aria-hidden="true"><i></i></span>
+      <span>校园机会雷达<small>CDU CAMPUS BULLETIN</small></span>
+    </a>
+    <a class="rss-link" href="/feed.xml">RSS 订阅 <span aria-hidden="true">↗</span></a>
+  </header>
+  <main class="wrap">
+    <section class="intro" aria-labelledby="page-title">
+      <div>
+        <p class="eyebrow"><span class="small-line" aria-hidden="true"></span> 成都大学 · 校园信息聚合</p>
+        <h1 id="page-title">校园里的<span>新消息</span></h1>
+        <p class="intro-copy">比赛、科研实践与校园活动，放在一处看。<br>保留官方来源，报名是否开放，清楚标明。</p>
+      </div>
+      <div class="update-panel">
+        <span class="service-state" id="service-state" role="status"><i aria-hidden="true"></i>正在连接信息源</span>
+        <dl>
+          <div><dt>最近成功采集</dt><dd id="collected-at">—</dd></div>
+          <div><dt>本页数据核验</dt><dd id="refreshed-at">—</dd></div>
+        </dl>
+        <button class="refresh-button" id="refresh" type="button"><span aria-hidden="true">↻</span> 刷新列表</button>
+      </div>
+    </section>
+    <p class="replay-note" id="replay-note" hidden>离线样本预览 · 时间按回放参考时点计算，未重新检查原文的实时可达性。</p>
+    <section class="toolbar" aria-label="通知筛选">
+      <div class="views" role="group" aria-label="信息范围">
+        <button type="button" data-view="all" aria-pressed="true">最新通知 <span data-count="all">—</span></button>
+        <button type="button" data-view="current" aria-pressed="false">当前机会 <span data-count="current">—</span></button>
+        <button type="button" data-view="history" aria-pressed="false">历史信息 <span data-count="history">—</span></button>
+      </div>
+      <div class="category-control"><label for="category">分类</label>
+        <select id="category">
+          <option value="all">全部分类</option>
+          <option value="学科竞赛">学科竞赛</option>
+          <option value="科研与创新实践">科研与创新实践</option>
+          <option value="AI / 计算机相关活动">AI 与计算机</option>
+          <option value="校园活动">校园活动</option>
+          <option value="其他通知">其他通知</option>
+        </select>
+      </div>
+    </section>
+    <div class="content-grid">
+      <section id="notices" class="notice-section" aria-labelledby="list-title" tabindex="-1">
+        <div class="section-heading"><h2 id="list-title">最新通知</h2><span id="result-count" aria-live="polite">正在获取通知</span></div>
+        <p class="view-note" id="view-note">原文发布日期优先；日期未提供时，按首次收录时间排序。</p>
+        <div class="message-state" id="message" role="status" aria-live="polite">
+          <span class="state-symbol" aria-hidden="true">◌</span>
+          <h3 id="message-title">正在获取校园信息</h3><p id="message-copy">请稍候。</p>
+        </div>
+        <div id="notice-list" class="notice-list"></div>
+      </section>
+      <aside class="reading-guide" aria-label="来源与阅读说明">
+        <p class="eyebrow">READING NOTES</p>
+        <h2>先看信息，再核实原文。</h2>
+        <div class="guide-item"><span class="guide-number">01</span><div><h3>报名未知，不等于已截止</h3><p>没有明确报名依据时，会显示“报名状态未确认”。历史信息也可能保留未知状态。</p></div></div>
+        <div class="guide-item"><span class="guide-number">02</span><div><h3>发布日期来自原文</h3><p>卡片日期是可核实的原文发布日期。系统采集时间单独显示，不代替发布时间。</p></div></div>
+        <div class="guide-item"><span class="guide-number">03</span><div><h3>以官方要求为准</h3><p>分类仅供浏览，摘要为原文节选。参与资格、报名方式与附件要求，请打开官方原文核实。</p></div></div>
+        <div class="source-section"><h3>本页官方来源</h3><ul id="source-list"><li>连接成功后显示</li></ul><p>仅展示已验证来源中通过质量检查的通知。</p></div>
+      </aside>
+    </div>
+  </main>
+  <footer class="wrap footer"><span>CDU OPPORTUNITY RADAR</span><p>来自官方来源 · 分类仅供浏览 · 不收集学生个人数据</p></footer>
+  <template id="notice-card">
+    <article class="notice-card">
+      <div class="card-date"><span>原文发布</span><time class="date-value"></time></div>
+      <div class="card-content">
+        <div class="card-tags"><span class="category-tag"></span><span class="history-tag" hidden>历史信息</span><span class="status-tag"></span></div>
+        <h3 class="notice-title"></h3>
+        <p class="source-name"></p>
+        <p class="summary"></p>
+        <div class="card-bottom"><span class="checked-at"></span><a class="original-link" target="_blank" rel="noopener noreferrer"><span>查看官方原文</span><span aria-hidden="true">↗</span></a></div>
+        <p class="source-url"></p>
+      </div>
+    </article>
+  </template>
+  <noscript><p class="wrap noscript-note">请启用 JavaScript 加载通知列表，或通过 <a href="/feed.xml">RSS Feed</a> 查看数据。</p></noscript>
+</body>
+</html>

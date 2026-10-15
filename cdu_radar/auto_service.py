@@ -9,14 +9,18 @@ from xml.etree import ElementTree as ET
 from .auto_publish import AutoRepository, NS, render
 from .approved_rss import atomic_write
 from .rss_service import FeedController, Snapshot, ERRORS, LOG, make_server
+from .student_page import assets, public_snapshot
 
 
 class AutoFeedController(FeedController):
-    paths=('/feed.xml','/current.xml','/history.xml')
+    paths=('/feed.xml','/current.xml','/history.xml','/api/notices')
     retired_paths=('/approved.xml',)
     state_kind='m4b-auto-rss-state-v1'
 
-    def __init__(self, db, state_dir, **kwargs):
+    def __init__(self, db, state_dir, *, data_mode='live', **kwargs):
+        if data_mode not in {'live','offline_replay'}:raise ValueError('Invalid data mode')
+        self.data_mode=data_mode
+        self.static_assets=assets()
         super().__init__(db,state_dir,**kwargs)
         self.output=self.lease.root/'feed.xml'
         if self.output.is_symlink():
@@ -46,7 +50,9 @@ class AutoFeedController(FeedController):
         with self.lock:
             if self.stop_event.is_set():return False
             try:
-                with self.reader() as repo:repo.feed_plan(self.clock())
+                # Check existence and rollback journaling before any writes.
+                # reserve() revalidates all source data under the write lock.
+                with self.reader():pass
                 if self.output.is_symlink():raise ValueError('Unsafe feed cache')
                 with self.writer() as repo:
                     # Reserve first publication times durably before file I/O;
@@ -60,7 +66,8 @@ class AutoFeedController(FeedController):
                 with self.reader() as repo:
                     live=repo.feed_plan(self.clock());body=render(live['items'])
                     if self.output.read_bytes()!=body:raise ValueError('Source changed during refresh')
-                    self.snapshot=Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',live['plan_hash'],self.monotonic())
+                    data=public_snapshot(live['items'],refreshed_at=self.clock().isoformat(),data_mode=self.data_mode)
+                    self.snapshot=Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',live['plan_hash'],self.monotonic(),data)
                 self.reason='ready';self.refreshes+=1;return True
             except ERRORS as exc:
                 self.failures+=1
@@ -69,6 +76,12 @@ class AutoFeedController(FeedController):
                 return False
 
     def response_snapshot(self, snapshot, path):
+        if path=='/api/notices':
+            remaining=max(0,self.max_age-(self.monotonic()-snapshot.validated_at))
+            payload=dict(snapshot.data,valid_for_ms=int(remaining*1000),poll_after_ms=5000)
+            body=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode('utf-8')
+            # JSON carries a per-response lifetime, so it never returns 304.
+            return Snapshot(body,'',snapshot.plan_hash,snapshot.validated_at)
         if path=='/feed.xml':return snapshot
         scope='current' if path=='/current.xml' else 'history'
         root=ET.fromstring(snapshot.body);channel=root.find('channel')
@@ -76,6 +89,9 @@ class AutoFeedController(FeedController):
             if item.findtext('{'+NS+'}listing')!=scope:channel.remove(item)
         body=ET.tostring(root,encoding='utf-8',xml_declaration=True)
         return Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
+
+    def response_content_type(self, path):
+        return 'application/json; charset=utf-8' if path=='/api/notices' else super().response_content_type(path)
 
 
 def serve_command(args):
@@ -116,7 +132,7 @@ def serve_command(args):
                     if stop.wait(args.collect_interval):break
             collector=Thread(target=work,name='official-collector',daemon=True);collector.start()
         print(json.dumps({'rss_path':'/feed.xml','current_path':'/current.xml','history_path':'/history.xml',
-            'port':server.server_address[1],'local_only':True,'paid_llm_calls':0}),flush=True)
+            'page_path':'/','api_path':'/api/notices','port':server.server_address[1],'local_only':True,'paid_llm_calls':0}),flush=True)
         server.serve_forever(poll_interval=0.2)
         return 0
     except KeyboardInterrupt:return 0

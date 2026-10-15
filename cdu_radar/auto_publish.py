@@ -76,13 +76,12 @@ def excerpt(content):
     return content[start:start+240], start
 
 
-def trusted_publisher(db, row):
+def trusted_publisher(db, row, catalog):
     from urllib.parse import urlsplit
     try:
         url = official_url(row['canonical_url'])
     except (RadarError, ValueError, TypeError):return None
     if url != row['canonical_url'] or not ARTICLE_PATH.fullmatch(urlsplit(url).path):return None
-    catalog = [s for s in load_sources() if s.status=='verified' and s.parser_supported and s.adapter]
     origins = {r[0] for r in db.execute('SELECT source_id FROM notice_sources WHERE notice_id=?', (row['id'],))}
     if not origins & {s.id for s in catalog}:return None
     host = urlsplit(url).hostname
@@ -120,9 +119,12 @@ def describe(row, publisher, now, analyzer):
         warnings.append('规则辅助分析异常；仅展示基础信息，报名状态未知。')
     category = '其他通知'
     historical = False
+    administrative = bool(result and result.category=='administrative') or bool(re.search(
+        r'经费报销|财务报销|岗位聘任|人事公告|(?:奖学金|助学金|荣誉称号|补贴|推荐名单).*公示', row['title']))
     if result:
         historical = result.category=='news'
-        if result.category in {'competition','hackathon'} or analyzer.match('competition',row['title']):category='学科竞赛'
+        if administrative:category='其他通知'
+        elif result.category in {'competition','hackathon'} or analyzer.match('competition',row['title']):category='学科竞赛'
         elif result.category=='project_recruitment' or re.search(r'科研|研究实践|创新实践|课题|项目招募',row['title']):category='科研与创新实践'
         elif result.relevance_level=='direct_ai' or re.search(r'计算机|软件|编程|网络安全',row['title']):category='AI / 计算机相关活动'
         elif result.category in {'workshop','lecture','other_activity'}:category='校园活动'
@@ -137,7 +139,7 @@ def describe(row, publisher, now, analyzer):
     explicit_closed = any(re.search(r'报名已结束|报名已经截止|征集已结束|停止报名', c) and
         not re.search(r'并非|不是|尚未|是否|若|如果', c) for c in re.split(r'[。；\n]', content))
     if explicit_closed or any(deadline_moment(v)<now for v in deadlines):status='closed'
-    elif facts['registration_deadline'] and not historical:
+    elif facts['registration_deadline'] and not historical and not administrative:
         start_fact = facts['registration_start_date']
         # Conflicting, tentative or yearless constraints never imply openness.
         uncertain = bool(result and any(e.kind=='unknown' and e.field in facts for e in result.evidence))
@@ -163,12 +165,15 @@ class AutoRepository:
 
     def feed_plan(self, now=None):
         now=reference_datetime(now)
+        # Reload for every live plan, once per batch rather than once per row.
+        # Revoking a source still invalidates the very next HTTP read gate.
+        catalog=[s for s in load_sources() if s.status=='verified' and s.parser_supported and s.adapter]
         rows=self.db.execute('SELECT * FROM notices ORDER BY canonical_url').fetchall()
         items=[];excluded=[]
         for row in rows:
             ident=row['id'];reason=None
             health=self.db.execute('SELECT * FROM notice_health WHERE notice_id=?',(ident,)).fetchone()
-            publisher=trusted_publisher(self.db,row)
+            publisher=trusted_publisher(self.db,row,catalog)
             if not publisher:reason='untrusted_or_missing_source'
             elif not row['title'].strip() or len(row['content'].strip())<20:reason='invalid_content'
             elif hashlib.sha256(row['content'].encode()).hexdigest()!=row['content_hash']:reason='content_hash_mismatch'
@@ -185,6 +190,7 @@ class AutoRepository:
             if reason:
                 excluded.append({'notice_id':ident,'reason':reason});continue
             item=describe(row,publisher,now,self.analyzer)
+            item['source_checked_at']=health['checked_at']
             state=self.db.execute('SELECT * FROM auto_publications WHERE notice_id=?',(ident,)).fetchone()
             item['guid']='urn:cdu-radar:notice:'+hashlib.sha256(row['canonical_url'].encode()).hexdigest()
             item['first_published_at']=state['first_published_at'] if state else None
@@ -200,7 +206,7 @@ class AutoRepository:
         for item in plan['items']:
             self.db.execute('INSERT OR IGNORE INTO auto_publications VALUES (?,?,?)',
                 (item['notice_id'],item['guid'],now.isoformat()))
-        return self.feed_plan(now)
+        return plan
 
 
 def render(items, scope='all'):

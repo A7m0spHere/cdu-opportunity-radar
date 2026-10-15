@@ -20,7 +20,7 @@ cdu-radar = "cdu_radar.cli:main"
 include = ["cdu_radar*"]
 
 [tool.setuptools.package-data]
-cdu_radar = ["sources.json", "units.json", "rules.json"]
+cdu_radar = ["sources.json", "units.json", "rules.json", "web/*.html", "web/*.css", "web/*.js", "web/*.svg"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

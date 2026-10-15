@@ -1,5 +1,7 @@
 # Environment snapshot: Python 3.12.10 / Windows / 2026-10-13
+# PyYAML added for local draft validation on 2026-10-15; existing pins retained.
 Pygments==2.21.0
+PyYAML==6.0.3
 anyio==4.15.1
 beautifulsoup4==4.15.0
 certifi==2026.7.22

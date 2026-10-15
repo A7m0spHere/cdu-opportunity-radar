@@ -1,0 +1,28 @@
+{
+  "repository": "AstrBotDevs/AstrBot",
+  "version": "4.25.5",
+  "commit": "af70151ff82fbd035f8a93d912699400e15ea5e4",
+  "files": {
+    "astrbot/api/__init__.py": "79cfadc47a23e72b541bce559037f9b16e9e1fa5a4774ebcf9a9c5c0ed5769fe",
+    "astrbot/api/event/__init__.py": "c36a597a94ec5841afb81616820771a2ac7663793747985a09eb94822cecd169",
+    "astrbot/api/star/__init__.py": "3b18071ad5a7de51101a36f8b706e96d69d17a951ebcfbbb831b4302402c7e14",
+    "astrbot/core/config/astrbot_config.py": "4ad1e1ff5e90b89b6c736511001763b37c5ca335701e6f51cbb141d8cae9a873",
+    "astrbot/core/config/default.py": "6b1b48279d1d2a70c6a4c1d01f276348a0c38b56cc0d8ebfa0d1d2efda71d786",
+    "astrbot/core/message/message_event_result.py": "1496a597508319b69db53816ea02b8c9be9cecba2ee5001ed5f2934310c98219",
+    "astrbot/core/platform/astr_message_event.py": "b179e74277450d61370cdbdf873ff06f3a97804729d562fde9871b556d80779e",
+    "astrbot/core/platform/message_session.py": "86563844e9a0322cfaf475fda4f3699017c6747232c065298264b541af5a9ca3",
+    "astrbot/core/platform/message_type.py": "b869f928df01ffb6fd1799c54e9bcb0174655f1d951473f726626337c702edf8",
+    "astrbot/core/star/base.py": "9de5b69d047c353ddcec234c5a1b50a0f4d6c8896c1264e9f6f1ef79be278a3f",
+    "astrbot/core/star/context.py": "22d9e1a002c70ec2202b61036685562879a39c875b0426a62452e50cfc7ff64b",
+    "astrbot/core/star/star.py": "01b42c06ececdf196f6ca94c0cccc28bb6693d43c46ae9d49f9be398fd0c9a08",
+    "astrbot/core/star/star_manager.py": "e5cd96f04ad397f9405f9c2d96d475f2e7c79f71a9488fb1d135b68299ea0fcb",
+    "astrbot/core/star/star_tools.py": "e2b7101083ef09dc15995aa7c23eba98a9ee25ce1ae3066260080a158e800352",
+    "astrbot/core/star/__init__.py": "73b3a6057005df309795032ac6fa9536c16409718802777090e8a90f3fd4d3f7",
+    "astrbot/core/utils/astrbot_path.py": "9b4cb70947898f07391998acecc08f55192f78b755037c411f890df59f9eaa91",
+    "astrbot/core/platform/sources/aiocqhttp/aiocqhttp_message_event.py": "b2a712420a48352109f7b4515e500bb518c551e77edbc7116a6ad84cff127c90",
+    "astrbot/core/platform/sources/aiocqhttp/aiocqhttp_platform_adapter.py": "3ca5170a9613f15f9e97980ed8e4be2fd282b6665f0f23b3ffbbcff191fa006f",
+    "astrbot/core/star/register/star.py": "a9ca08cfea39f4688a70e914b3107faf7ed03d3ad70765d6577ae9a692a1bb16",
+    "astrbot/core/utils/command_parser.py": "0b0778cf3c8a1280be7abd1afbd599e67da0e05f1e1fda7a047c43f7a8236953",
+    "astrbot/core/utils/plugin_kv_store.py": "2ff5c6bb1d4ad9addf4b1aae9138355cdd29abb028b1935e5cfa579409397961"
+  }
+}

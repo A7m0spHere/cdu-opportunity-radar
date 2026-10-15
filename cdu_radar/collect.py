@@ -10,11 +10,12 @@ from .sources import content_source
 LOG = logging.getLogger(__name__)
 
 
-def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages: int = 1) -> list[dict]:
+def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages: int = 1, stop_event=None) -> list[dict]:
     if limit <= 0 or max_pages <= 0:
         raise ValueError("limit and max_pages must be positive")
     summaries = []
     for source in sources:
+        if stop_event is not None and stop_event.is_set():break
         started = utc_now()
         monotonic_start = time.monotonic()
         counts = dict(inserted=0, updated=0, unchanged=0, failed=0, pages_read=0, parse_failures=0, duplicates=0)
@@ -29,6 +30,7 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
             next_url = source.column_url
             visited_pages, seen_articles = set(), set()
             for _ in range(max_pages):
+                if stop_event is not None and stop_event.is_set():break
                 if next_url is None or next_url in visited_pages or len(seen_articles) >= limit:
                     break
                 visited_pages.add(next_url)
@@ -36,12 +38,14 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                 counts["pages_read"] += 1
                 links = adapter.parse_list(html, final_url)
                 for link in links:
+                    if stop_event is not None and stop_event.is_set():break
                     if link.canonical_url in seen_articles:
                         counts["duplicates"] += 1
                         continue
                     if len(seen_articles) >= limit:
                         break
                     seen_articles.add(link.canonical_url)
+                    canonical = link.canonical_url
                     try:
                         # Reject unsupported/unconfigured content before fetching it.
                         if not ARTICLE_PATH.fullmatch(urlsplit(link.canonical_url).path):
@@ -56,10 +60,14 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                                 and urlsplit(source.column_url).hostname == urlsplit(canonical).hostname):
                             raise ParseError(f"Publication date conflict: list={link.published_at}, article={article.published_at}")
                         article = replace(article, published_at=article.published_at or link.published_at, content_source_id=unit_id)
+                        if stop_event is not None and stop_event.is_set():break
                         result = store.save_notice(source.id, canonical, article, discovery_published_at=link.published_at)
                         counts[result] += 1
                         counts["duplicates"] += result in {"updated","unchanged"}
                     except RadarError as exc:
+                        store.fail_notice(link.canonical_url, exc)
+                        if canonical != link.canonical_url:
+                            store.fail_notice(canonical, exc)
                         counts["failed"] += 1
                         counts["parse_failures"] += isinstance(exc,ParseError)
                         errors.append(str(exc))

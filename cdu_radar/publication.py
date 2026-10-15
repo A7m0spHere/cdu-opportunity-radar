@@ -121,6 +121,10 @@ class PublicationRepository:
         now=reference_datetime(now);raw,version=snapshot(self.db,ident);r=self.current(ident)
         if r is None:return {'review_status':'pending','publication_status':'unpublished','valid':False,'notice_version_hash':version}
         valid=r['review_status']=='approved' and r['publication_status'] in {'ready','published'} and r['notice_version_hash']==version
+        # M4-B collection preserves all old approval rows/events as read-only.
+        # A separate tombstone prevents reverting text from reviving an old approval.
+        if table_exists(self.db,'legacy_publication_invalidations') and self.db.execute(
+                'SELECT 1 FROM legacy_publication_invalidations WHERE review_id=?',(r['id'],)).fetchone():valid=False
         invalid_reason=None
         if valid:
             if now > reference_datetime(json.loads(r['approved_payload'])['valid_until']):invalid_reason='approval_expired'

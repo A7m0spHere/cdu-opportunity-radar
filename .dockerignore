@@ -1,0 +1,16 @@
+# A future RSS image build must never send local databases or credentials.
+**
+!pyproject.toml
+!README.md
+!cdu_radar/
+!cdu_radar/**
+!deploy/
+!deploy/m3b1/
+!deploy/m3b1/Dockerfile.rss
+cdu_radar/**/__pycache__/
+cdu_radar/**/*.pyc
+**/.env
+**/.env.*
+**/*.sqlite*
+**/*.db
+**/.git

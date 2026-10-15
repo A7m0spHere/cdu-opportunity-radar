@@ -16,6 +16,13 @@ class ParseError(RadarError):
     scope = "parser"
 
 
+class SourceUnavailable(RadarError):
+    """A known upstream maintenance response, even when HTTP reports 200."""
+    category = "source_maintenance"
+    scope = "source"
+    retryable = True
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="microseconds")
 

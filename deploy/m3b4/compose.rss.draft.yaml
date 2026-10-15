@@ -1,0 +1,49 @@
+# Offline draft only. Does not define/reload/recreate AstrBot or NapCat.
+name: cdu-radar-m3b4-rss
+
+x-common: &rss
+  image: ${RADAR_RSS_IMAGE:?Approve the locally built RSS image identity}
+  pull_policy: never
+  build:
+    context: ../..
+    dockerfile: deploy/m3b1/Dockerfile.rss
+    args:
+      PYTHON_BASE: ${PYTHON_BASE:?Approve a Python 3.12 base image digest}
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: ["/tmp:rw,noexec,nosuid,size=32m,mode=1777"]
+  restart: "no"
+  mem_limit: 256m
+  cpus: 0.25
+  pids_limit: 128
+  environment: {TZ: Asia/Shanghai}
+  logging:
+    driver: local
+    options: {max-size: "10m", max-file: "3"}
+
+services:
+  rss:
+    <<: *rss
+    profiles: [approved-rss]
+    network_mode: container:${ASTRBOT_CONTAINER_ID:?Approve the exact existing AstrBot container ID}
+    command: [serve-approved-rss, --db, /var/lib/cdu-lab/dataset/synthetic.sqlite3,
+              --state-dir, /var/lib/cdu-rss-state, --bind, "127.0.0.1", --port, "8765",
+              --interval, "10", --max-age, "30"]
+    volumes:
+      - {type: volume, source: synthetic, target: /var/lib/cdu-lab}
+      - {type: volume, source: state, target: /var/lib/cdu-rss-state}
+  init-synthetic:
+    <<: *rss
+    profiles: [approved-init]
+    network_mode: none
+    command: [rss-synthetic, init, --directory, /var/lib/cdu-lab/dataset, --ttl, "86400"]
+    volumes:
+      - {type: volume, source: synthetic, target: /var/lib/cdu-lab}
+
+volumes:
+  synthetic:
+    labels: {org.cdu-radar.purpose: m3b4-synthetic-only}
+  state:
+    labels: {org.cdu-radar.purpose: m3b4-synthetic-only}

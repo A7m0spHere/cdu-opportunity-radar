@@ -40,7 +40,9 @@ python3 -m venv .venv
 
 Windows/Linux 与网络权限要求见 [HTTP 指南](docs/RSS_HTTP.md)，实际验收边界见 [M3-A 记录](docs/M3A_RESULTS.md)，非空初始化及待用户执行的真实测试群流程见 [测试手册](docs/M3A_TEST_GROUP.md)。合法空 Feed 未必能建立插件历史，不能把 Mock 通过当作真实群联调通过。
 
-M3-B 当前处于真实联调前的准备阶段：[分支审查、只读环境检查与现场验收表](docs/M3B_PREFLIGHT.md)。尚未登录服务器、安装 RSS 插件或发送测试群消息。
+M3-B 的[早期分支审查与现场检查方案](docs/M3B_PREFLIGHT.md)已留档；后续已完成生产只读调查，尚未安装 RSS 插件或发送测试群消息。
+
+M3-B.4 已完成专用固定会话 RSS 插件的离线实现：默认关闭、无聊天命令或 LLM 工具、持久去重和有界投递预算；[方案与部署审批清单](docs/M3B4_MINIMAL_PLUGIN.md)。生产环境仅做过只读调查，插件和单 RSS 容器尚未安装/启动，Mock 不代表 QQ 送达。
 
 ### M2-C 人工审核与已批准 RSS
 

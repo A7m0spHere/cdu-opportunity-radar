@@ -16,7 +16,6 @@ import time
 from .analysis_models import reference_datetime
 from .analysis_store import AnalysisRepository
 from .approved_rss import atomic_write, export_approved, render
-from .llm_workflow import readonly_repository
 from .publication import PublicationRepository, table_exists
 from .storage import Store
 
@@ -26,7 +25,7 @@ ERRORS=(OSError,ValueError,TypeError,KeyError,AttributeError,RecursionError,sqli
 
 class StateLease:
     """OS-released single-writer lock; no stale PID-file cleanup after a crash."""
-    def __init__(self, root, db):
+    def __init__(self, root, db, *, kind='m3a-rss-state-v1'):
         self.root=Path(root).resolve();db=Path(db).resolve();self.handle=None
         if db.is_relative_to(self.root):raise ValueError('State directory must not contain the source database')
         self.root.mkdir(parents=True,exist_ok=True)
@@ -48,10 +47,10 @@ class StateLease:
             identity=hashlib.sha256(os.path.normcase(str(db)).encode()).hexdigest()
             if marker.is_symlink():raise ValueError('Unsafe state marker')
             if marker.exists():
-                if json.loads(marker.read_text('utf-8'))!={'kind':'m3a-rss-state-v1','database_identity':identity}:raise ValueError('State directory belongs to another source')
+                if json.loads(marker.read_text('utf-8'))!={'kind':kind,'database_identity':identity}:raise ValueError('State directory belongs to another source')
             else:
                 if any(p.name!='publisher.lock' for p in self.root.iterdir()):raise ValueError('Refuse to claim a nonempty state directory')
-                atomic_write(marker,json.dumps({'kind':'m3a-rss-state-v1','database_identity':identity}).encode())
+                atomic_write(marker,json.dumps({'kind':kind,'database_identity':identity}).encode())
             if (self.root/'approved.xml').is_symlink():raise ValueError('Unsafe feed cache')
         except BaseException:
             self.close();raise
@@ -71,11 +70,17 @@ class Snapshot:
 
 class FeedController:
     """HTTP reads only; this publisher writes export timestamps, never approvals."""
+    paths = ('/approved.xml',)
+    retired_paths = ()
+    state_kind = 'm3a-rss-state-v1'
+
+    def response_snapshot(self, snapshot, path):
+        return snapshot
     def __init__(self, db, state_dir, *, max_age=30, clock=reference_datetime, monotonic=time.monotonic):
         self.db=Path(db).resolve()
         if not self.db.is_file():raise ValueError('Source database does not exist')
         if not 0.1<=max_age<=3600:raise ValueError('Invalid maximum validation age')
-        self.lease=StateLease(state_dir,self.db);self.output=self.lease.root/'approved.xml'
+        self.lease=StateLease(state_dir,self.db,kind=self.state_kind);self.output=self.lease.root/'approved.xml'
         self.max_age=max_age;self.clock=clock;self.monotonic=monotonic
         self.lock=threading.RLock();self.wakeup=threading.Event();self.stop_event=threading.Event()
         self.snapshot=None;self.reason='starting';self.worker=None
@@ -85,7 +90,11 @@ class FeedController:
     @contextmanager
     def reader(self):
         if not self.db.is_file():raise ValueError('Source database is unavailable')
-        with readonly_repository(self.db) as repo:
+        db=sqlite3.connect(self.db.as_uri()+'?mode=ro',uri=True)
+        try:
+            db.row_factory=sqlite3.Row
+            store=Store.__new__(Store);store.db=db
+            repo=AnalysisRepository.__new__(AnalysisRepository);repo.db=db;repo.store=store
             repo.db.execute('PRAGMA busy_timeout=1000')
             repo.db.execute('BEGIN')
             # WAL permits commits while this response holds an older read snapshot.
@@ -95,6 +104,7 @@ class FeedController:
             if repo.db.execute('PRAGMA user_version').fetchone()[0]<5 or not table_exists(repo.db,'publication_state'):
                 raise ValueError('Initialize publication schema through the existing admin workflow first')
             yield PublicationRepository(repo)
+        finally:db.close()
 
     @contextmanager
     def writer(self):
@@ -210,15 +220,19 @@ def make_server(controller, host='127.0.0.1', port=8765):
             self.send_header('Content-Length',str(len(body)));self.end_headers()
             if self.command!='HEAD' and status!=304:self.wfile.write(body);self.wfile.flush()
         def do_GET(self):
-            if self.path not in {'/approved.xml','/health'}:
+            if self.path in controller.retired_paths:
+                self.reply(410,b'Human-approved feed retired. Subscribe to /feed.xml (automatic aggregation).\n');return
+            if self.path not in {*controller.paths,'/health'}:
                 self.reply(404,b'Not found\n');return
             try:
                 if self.path=='/health':
                     state=controller.health();self.reply(200 if state['ready'] else 503,json.dumps(state).encode(),'application/json');return
                 with controller.read_gate() as snapshot:
                     if snapshot is None:self.reply(503,b'RSS temporarily unavailable\n')
-                    elif etag_matches(self.headers.get('If-None-Match'),snapshot.etag):self.reply(304,b'',etag=snapshot.etag)
-                    else:self.reply(200,snapshot.body,'application/rss+xml; charset=utf-8',snapshot.etag)
+                    else:
+                        snapshot=controller.response_snapshot(snapshot,self.path)
+                        if etag_matches(self.headers.get('If-None-Match'),snapshot.etag):self.reply(304,b'',etag=snapshot.etag)
+                        else:self.reply(200,snapshot.body,'application/rss+xml; charset=utf-8',snapshot.etag)
             except (BrokenPipeError,ConnectionResetError,TimeoutError):pass
         do_HEAD=do_GET
         def forbidden(self):self.reply(405,b'Read-only endpoint\n')

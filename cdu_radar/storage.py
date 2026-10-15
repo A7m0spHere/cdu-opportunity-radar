@@ -2,7 +2,7 @@ import hashlib
 import sqlite3
 from pathlib import Path
 
-from .models import Article, Source, utc_now
+from .models import Article, Source, ParseError, utc_now
 
 SCHEMA = """
 PRAGMA foreign_keys = ON;
@@ -48,6 +48,8 @@ class Store:
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
         self._migrate()
+        from .auto_publish import initialize
+        initialize(self.db)
 
     def _migrate(self):
         """Append-only, transactional M0→M1 migration; never recreate notices."""
@@ -151,9 +153,15 @@ class Store:
             self.db.execute("""INSERT INTO notice_sources (notice_id,source_id,first_seen_at,last_seen_at,published_at) VALUES (?,?,?,?,?)
                 ON CONFLICT(notice_id,source_id) DO UPDATE SET last_seen_at=excluded.last_seen_at,published_at=excluded.published_at""",
                 (notice_id, source_id, now, now, discovery_published_at or article.published_at))
-            from .publication import source_updated
-            source_updated(self.db,notice_id,now)
+            from .auto_publish import parsed
+            parsed(self.db,notice_id,now,changed=result=='updated')
         return result
+
+    def fail_notice(self, url, failure):
+        from .auto_publish import failed
+        status = 'parse_failed' if isinstance(failure, ParseError) else 'unavailable'
+        with self.db:
+            failed(self.db,url,status,failure.category,utc_now())
 
     def request_event(self, source_id, url, requested_at, attempt, status_code, error, elapsed_ms):
         with self.db:

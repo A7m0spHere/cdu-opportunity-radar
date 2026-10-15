@@ -1,12 +1,12 @@
 # cdu-opportunity-radar
 
-成都大学官方通知采集器。M1 支持来源登记、受控采集和 SQLite/RSS；M2-A 支持规则预筛、人工标注及评测；M2-B 增加受控模型分析和字段事实审计；M2-C 增加本地人工发布审批和独立已批准 RSS。采集、存储、预测、评测标签和发布审批独立，不依赖 AstrBot API。
+面向成都大学学生的校园机会自动聚合平台。仅从既有、已验证的官方来源采集通知，解析、分类、按原文 URL 去重并检查质量后，自动进入 RSS。每条信息带官方来源、原文链接、可核实的来源日期和可追溯的原文节选；报名状态未知、已截止与历史信息分开标记。
 
-M3-A 增加只读环回 RSS HTTP 服务、安全刷新/失效暂停和隔离合成联调。已做本地 HTTP 与 Mock 验证，尚未部署公网或连接实际 AstrBot/QQ。
+**当前路线：M4-B 自动聚合发布。无需逐条人工审批、确认指纹、付费模型或 QQ/AstrBot。** 新入口为 `serve-rss` 的 `/feed.xml`，另有 `/current.xml`、`/history.xml`。沿用 M3-A 的数据库响应守门和 503 保护，不静态托管 XML。[最小运行指南、数据契约和弃用说明](docs/AUTO_PUBLICATION.md)；[M4-B 测试和 M4-A 真实样本回放](docs/M4B_RESULTS.md)。目前仅本机运行，未部署服务器。
 
-**当前路线（M3-B.8）：生产 AstrBot 插件安装与独立 OneBot 自动发送均为 NO-GO。** 暂时保留人工审批与安全 RSS 发布能力，不启用自动 QQ 推送；停止生产插件加载相关开发、扩展扫描和反复补证。只有新的实质证据才重新评审，后续以[最终路线决策与唯一有界补证申请](docs/M3B8_ROUTE_DECISION.md)为准。该申请尚未获准执行，RSS 路线选择也不代表服务器部署获批。
+M3-B.8 的 QQ 插件与独立 OneBot 发送冻结继续生效。旧 M2-C/M3-A 审批记录只读保留；`serve-approved-rss` 和审批确认写入已停用，新服务的 `/approved.xml` 返回 410，不重定向、不标作“已人工审核”。旧规则评分、推荐标签和审批均不控制新 Feed。
 
-**原始 Feed 仍是技术验证 Feed**，包括获奖新闻和普通通知；`approved.xml` 则只包含当前有效、明确人工批准的内容。规则预测、模型结果、推荐标签和旧分析审核不会自动发布。模型只在配置有效且显式 --send 时调用，目前没有 QQ 群订阅或公网部署。
+旧 `export-rss` 仍是技术诊断导出，不能当作带质量守门的自动 Feed；它生成的同名文件与新 HTTP `/feed.xml` 是不同入口。下文 M1–M3 操作保留为历史参考，涉及批准写入和旧 HTTP 启动的命令不再适用。
 
 ## 安装
 
@@ -34,6 +34,17 @@ python3 -m venv .venv
 Linux 使用 `.venv/bin/python scripts/validate_m3b4_design.py`。脚本只读取本地草稿，不执行 Docker、SSH、插件加载或消息发送；检查通过不解除上述 NO-GO。
 
 ## 本地运行
+
+### 当前：自动聚合，无需审批
+
+```powershell
+.\.venv\Scripts\python.exe -m cdu_radar collect --db data/auto.sqlite3 --source computer --limit 3
+.\.venv\Scripts\python.exe -m cdu_radar serve-rss --db data/auto.sqlite3 --state-dir data/auto-http --collect-interval 3600 --source computer
+```
+
+订阅 [全部通知](http://127.0.0.1:8765/feed.xml) 或 [当前机会](http://127.0.0.1:8765/current.xml)。没有明确报名期限的通知不会因为刚被采集就进入当前机会；当前机会可以为空。Linux 将 Python 路径换为 `.venv/bin/python`。完整流程见 [自动发布指南](docs/AUTO_PUBLICATION.md)。
+
+### 以下为历史分析、评测和审批流程
 
 ### M3-A 安全 HTTP 与隔离合成联调
 

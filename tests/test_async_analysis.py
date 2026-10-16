@@ -48,7 +48,8 @@ def local_run(a,n,p,sink):
     return a.analyze(n,p,sink),None
 
 
-def test_exact_input_dedup_source_update_and_raw_history_unchanged(store,tmp_path):
+def test_exact_input_dedup_source_update_and_raw_history_unchanged(store,tmp_path,monkeypatch):
+    monkeypatch.setattr('cdu_radar.rss.utc_now',lambda:NOW.isoformat())
     ident=seed(store);repo=AnalysisRepository(store);notice=repo.input(ident)
     repo.review(ident,'approved','historical only','synthetic tester')
     raw_before={t:[tuple(r) for r in store.db.execute('SELECT * FROM '+t)] for t in ['notices','notice_sources','notice_links','analysis_reviews','manual_labels','notice_analyses']}

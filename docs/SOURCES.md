@@ -1,5 +1,7 @@
 # M1 信息源清单
 
+M6 的产品范围、分批接入与逐单位缺口见 [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) / [SOURCE_COVERAGE.md](SOURCE_COVERAGE.md)。可用离线 `python -m cdu_radar source-coverage --format json` 导出分层状态和全部候选队列；候选/曾可访问不等于已接入或长期健康，本轮没有扩抓来源。
+
 ## 当前增量：M5-B（2026-10-16）
 
 本轮新增验证学生处 `department-xsc-column-148` 与团委 `department-tuanwei-column-149` 两个既有通知栏目，使用共享 `campus` 适配器；已实现并真实验证栏目由 9 增至 **11**。各取 3 篇真实详情、隔离入库及重复采集通过，见 [试点结果](M5B_RESULTS.md)。其余候选状态不变，教务处仍 pending。

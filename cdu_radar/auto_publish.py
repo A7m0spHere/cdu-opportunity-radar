@@ -13,6 +13,7 @@ from .models import official_url, RadarError
 from .sources import load_sources
 from .adapters import ARTICLE_PATH
 from .rule_analysis import RuleAnalyzer, deadline_moment
+from .taxonomy import classify, options
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS notice_health (
@@ -156,7 +157,8 @@ def describe(row, publisher, now, analyzer):
         'source_published_date':source_date,'summary':summary,
         'summary_evidence':{'field':'content','start':start,'end':start+len(summary),'quote':summary,'content_hash':row['content_hash']},
         'category':category,'registration_status':status,'listing':listing,'facts':facts,
-        'audience':audience,'warnings':warnings}
+        'audience':audience,'warnings':warnings,
+        'classification':classify(row['title'],content,result.category if result else None)}
 
 
 class AutoRepository:
@@ -168,7 +170,10 @@ class AutoRepository:
         now=reference_datetime(now)
         # Reload for every live plan, once per batch rather than once per row.
         # Revoking a source still invalidates the very next HTTP read gate.
-        catalog=[s for s in load_sources() if s.status=='verified' and s.parser_supported and s.adapter]
+        full_catalog=load_sources()
+        catalog=[s for s in full_catalog if s.status=='verified' and s.parser_supported and s.adapter]
+        filter_options=options(full_catalog)
+        known_columns={s.id for s in full_catalog if s.column_url}
         rows=self.db.execute('SELECT * FROM notices ORDER BY canonical_url').fetchall()
         items=[];excluded=[]
         for row in rows:
@@ -191,6 +196,8 @@ class AutoRepository:
             if reason:
                 excluded.append({'notice_id':ident,'reason':reason});continue
             item=describe(row,publisher,now,self.analyzer)
+            item['publisher_id']=row['content_source_id']
+            item['discovery_source_ids']=sorted(r[0] for r in self.db.execute('SELECT source_id FROM notice_sources WHERE notice_id=?',(ident,)) if r[0] in known_columns)
             item['source_checked_at']=health['checked_at']
             state=self.db.execute('SELECT * FROM auto_publications WHERE notice_id=?',(ident,)).fetchone()
             item['guid']='urn:cdu-radar:notice:'+hashlib.sha256(row['canonical_url'].encode()).hexdigest()
@@ -198,7 +205,8 @@ class AutoRepository:
             if state and state['guid']!=item['guid']:raise ValueError('Stored automatic identity mismatch')
             items.append(item)
         # Do not include wall clock in the fingerprint: only effective state changes invalidate it.
-        return {'items':items,'excluded':excluded,'plan_hash':fingerprint([items,excluded]),
+        return {'items':items,'excluded':excluded,'filter_options':filter_options,
+            'plan_hash':fingerprint([items,excluded,filter_options]),
             'statuses':dict(Counter(i['registration_status'] for i in items)),
             'listings':dict(Counter(i['listing'] for i in items))}
 

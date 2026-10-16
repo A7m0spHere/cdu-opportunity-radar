@@ -6,17 +6,27 @@ import json
 import sys
 import threading
 
+from .taxonomy import API_V2, query_values, validate_public_v2
+from .models import InvalidFilter
+
 CONTRACT='student-notices-v1'
 PRIVATE=tuple(ipaddress.ip_network(n) for n in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16'))
 PUBLIC_ROUTES={
     '/':'text/html','/app.css':'text/css','/app.js':'text/javascript','/favicon.svg':'image/svg+xml',
-    '/api/notices':'application/json','/feed.xml':'application/rss+xml',
+    '/api/notices':'application/json',API_V2:'application/json','/feed.xml':'application/rss+xml',
     '/current.xml':'application/rss+xml','/history.xml':'application/rss+xml','/health':'application/json',
 }
 MAX_BYTES=2*1024*1024
 ITEM_FIELDS={'guid','title','source_name','source_url','source_published_date','summary','category',
              'registration_status','listing','source_checked_at','first_aggregated_at'}
 TOP_FIELDS={'schema_version','items','categories','counts','refreshed_at','data_mode','valid_for_ms','poll_after_ms'}
+
+
+def public_route(path):
+    if path.startswith(API_V2+'?'):
+        query_values(path)
+        return API_V2
+    return path
 
 
 def private_address(value):
@@ -36,9 +46,11 @@ def configuration(bind,clients,port,upstream_port):
 
 def upstream_read(port,path,etag=None):
     """Fixed loopback destination, no redirects, credentials, cookies or file reads."""
+    route=public_route(path)
+    if route not in PUBLIC_ROUTES:raise ValueError('Unsupported public route')
     connection=http.client.HTTPConnection('127.0.0.1',port,timeout=3)
     try:
-        headers={'Accept':PUBLIC_ROUTES[path]}
+        headers={'Accept':PUBLIC_ROUTES[route]}
         if etag:headers['If-None-Match']=etag
         connection.request('GET',path,headers=headers)
         response=connection.getresponse()
@@ -46,8 +58,8 @@ def upstream_read(port,path,etag=None):
         if len(body)>MAX_BYTES:raise ValueError('Upstream response exceeds preview limit')
         if response.getheader('X-CDU-Public-Contract')!=CONTRACT:raise ValueError('Unexpected upstream service')
         mime=(response.getheader('Content-Type') or '').split(';',1)[0]
-        if response.status not in {200,304,503}:raise ValueError('Unexpected upstream status')
-        if response.status==200 and mime!=PUBLIC_ROUTES[path]:raise ValueError('Unexpected upstream content')
+        if response.status not in ({200,304,400,503} if route==API_V2 else {200,304,503}):raise ValueError('Unexpected upstream status')
+        if response.status==200 and mime!=PUBLIC_ROUTES[route]:raise ValueError('Unexpected upstream content')
         if response.status==304 and (path not in {'/feed.xml','/current.xml','/history.xml'} or not etag):
             raise ValueError('Unexpected conditional response')
         if response.status==200 and path=='/api/notices':
@@ -55,6 +67,8 @@ def upstream_read(port,path,etag=None):
             if (not isinstance(data,dict) or set(data)!=TOP_FIELDS or data.get('schema_version')!=1 or
                     not isinstance(data.get('items'),list) or any(not isinstance(i,dict) or set(i)!=ITEM_FIELDS for i in data['items'])):
                 raise ValueError('Unexpected public JSON fields')
+        if response.status==200 and route==API_V2:validate_public_v2(json.loads(body))
+        if response.status==400:return 400,b'Invalid notice filters\n','text/plain; charset=utf-8',None
         return response.status,body,response.getheader('Content-Type'),response.getheader('ETag')
     finally:connection.close()
 
@@ -97,7 +111,9 @@ def make_preview_server(upstream_port, *, bind='127.0.0.1',port=0,clients=('127.
                     self.headers.get('Sec-Fetch-Site')=='cross-site' and not public_navigation):
                 self.reply(403,b'Cross-site requests are disabled\n');return
             if self.path=='/approved.xml':self.reply(410,b'Human-approved feed retired; use /feed.xml\n');return
-            if self.path not in PUBLIC_ROUTES:self.reply(404,b'Not found\n');return
+            try:route=public_route(self.path)
+            except InvalidFilter:self.reply(400,b'Invalid notice filters\n');return
+            if route not in PUBLIC_ROUTES:self.reply(404,b'Not found\n');return
             if not slots.acquire(blocking=False):self.reply(503,b'Preview temporarily unavailable\n');return
             try:
                 etag=self.headers.get('If-None-Match') if self.path.endswith('.xml') else None
@@ -107,7 +123,7 @@ def make_preview_server(upstream_port, *, bind='127.0.0.1',port=0,clients=('127.
                 except (OSError,ValueError,TypeError,http.client.HTTPException):
                     self.reply(503,b'Preview temporarily unavailable\n');return
                 if status==503:self.reply(503,b'Preview temporarily unavailable\n')
-                else:self.reply(status,body,mime or PUBLIC_ROUTES[self.path],tag)
+                else:self.reply(status,body,mime or PUBLIC_ROUTES[route],tag)
             finally:slots.release()
         def do_GET(self):
             try:self.serve_read()

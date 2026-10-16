@@ -5,6 +5,26 @@ const viewButtons = [...document.querySelectorAll("[data-view]")];
 const statuses = {possible: "可能仍可参与", closed: "报名已截止", unknown: "报名状态未确认"};
 const labels = {all: "最新通知", current: "当前机会", history: "历史信息"};
 let data = null, view = "all", pollTimer, expiryTimer, requestController, generation = 0;
+const filterControls = {source: "publisher", type: "information-type", topic: "topic", status: "registration-status", published: "date-presence", from: "date-from", to: "date-to", category: "category"};
+
+function queryPath() {
+  const params = new URLSearchParams();
+  for (const [key,id] of Object.entries(filterControls)) {
+    const value = $(id).value;
+    if (value && value !== "all") params.set(key, value);
+  }
+  return "/api/notices/v2" + (params.size ? "?" + params.toString() : "");
+}
+
+function populateFilters(payload) {
+  for (const [key,id,label] of [["sources","publisher","全部来源"],["types","information-type","全部类型"],["topics","topic","全部主题"]]) {
+    const selected = $(id).value;
+    const values = [{id: "all", label}, ...payload.filter_options[key]];
+    if (key === "topics") values.push({id: "unclassified", label: "主题未分类"});
+    $(id).replaceChildren(...values.map((v) => Object.assign(document.createElement("option"), {value: v.id, textContent: v.label})));
+    if (values.some((v) => v.id === selected)) $(id).value = selected;
+  }
+}
 
 function formatTime(value) {
   const stamp = new Date(value);
@@ -21,7 +41,9 @@ function sourceUrl(value) {
 }
 
 function validate(payload) {
-  if (payload.schema_version !== 1 || !Array.isArray(payload.items) || !Array.isArray(payload.categories) ||
+  if (payload.schema_version !== 2 || payload.taxonomy_version !== 1 || !payload.filter_options ||
+      !["sources","types","topics"].every((key) => Array.isArray(payload.filter_options[key]) && payload.filter_options[key].every((v) => typeof v.id === "string" && typeof v.label === "string")) ||
+      !Array.isArray(payload.items) || !Array.isArray(payload.categories) ||
       !Number.isFinite(payload.valid_for_ms) || payload.valid_for_ms <= 0 || payload.valid_for_ms > 3600000 ||
       !["live", "offline_replay"].includes(payload.data_mode) || !payload.refreshed_at) throw new Error("Invalid response");
   const guids = new Set(), urls = new Set();
@@ -32,6 +54,11 @@ function validate(payload) {
     if (!Object.hasOwn(statuses, item.registration_status) || !["current", "history", "unknown"].includes(item.listing) ||
         !payload.categories.includes(item.category) || (item.source_published_date !== null && !/^20\d{2}-\d{2}-\d{2}$/.test(item.source_published_date))) throw new Error("Invalid state");
     sourceUrl(item.source_url);
+    const c = item.classification;
+    if (!c || c.version !== 1 || c.method !== "rules" || c.model_state !== "not_analyzed" ||
+        !payload.filter_options.types.some((t) => t.id === c.type) || !Array.isArray(c.topics) ||
+        !c.topics.every((t) => payload.filter_options.topics.some((o) => o.id === t)) ||
+        !payload.filter_options.sources.some((s) => s.id === item.publisher_id) || !Array.isArray(item.discovery_source_ids)) throw new Error("Invalid classification");
     if (guids.has(item.guid) || urls.has(item.source_url)) return false;
     guids.add(item.guid); urls.add(item.source_url); return true;
   });
@@ -84,6 +111,8 @@ function card(item) {
     time.setAttribute("aria-label", item.source_published_date);
   } else time.textContent = "日期未提供";
   find(".category-tag").textContent = item.category;
+  find(".type-tag").textContent = data.filter_options.types.find((t) => t.id === item.classification.type)?.label || "未分类";
+  find(".topic-tags").textContent = item.classification.topics.map((id) => data.filter_options.topics.find((t) => t.id === id)?.label).join(" · ") || "主题未分类";
   find(".history-tag").hidden = item.listing !== "history";
   find(".status-tag").textContent = statuses[item.registration_status];
   find(".status-tag").dataset.state = item.registration_status;
@@ -113,7 +142,7 @@ function render() {
   $("notice-list").replaceChildren(...items.map(card));
   $("message").hidden = items.length > 0;
   if (!items.length) {
-    if (category !== "all") message("empty", "这个分类暂时没有通知", "可以切换分类，或回到最新通知查看其他校园信息。");
+    if (Object.values(filterControls).some((id) => $(id).value && $(id).value !== "all")) message("empty", "这些条件下暂时没有通知", "可以减少筛选条件，或重置后查看全部合格校园信息。未知状态不代表没有相关信息。");
     else if (view === "current") message("empty", "暂未确认当前可参与的机会", "你仍可在“最新通知”浏览校园信息。报名状态未确认，不代表已经截止。");
     else if (view === "history") message("empty", "暂时没有历史信息", "有符合历史条件的通知后，会在这里显示。");
     else message("empty", "暂时没有可展示的通知", "采集到通过质量检查的官方通知后，会自动出现在这里。");
@@ -132,13 +161,15 @@ async function refresh() {
   $("refresh").disabled = true;
   $("notice-list").setAttribute("aria-busy", "true");
   try {
-    const response = await fetch("/api/notices", {cache: "no-store", credentials: "omit", signal: controller.signal, headers: {Accept: "application/json"}});
+    const response = await fetch(queryPath(), {cache: "no-store", credentials: "omit", signal: controller.signal, headers: {Accept: "application/json"}});
+    if (response.status === 400) throw new Error("Invalid filters");
     if (!response.ok || !response.headers.get("content-type")?.startsWith("application/json")) throw new Error("Source unavailable");
     const payload = validate(await response.json());
     const remaining = payload.valid_for_ms - (performance.now() - started);
     if (remaining <= 0) throw new Error("Snapshot expired in transit");
     if (ticket !== generation || document.hidden) return;
     data = payload;
+    populateFilters(payload);
     clearTimeout(expiryTimer);
     expiryTimer = setTimeout(() => unavailable("数据核验已过期，已隐藏通知。正在等待重新核验，请稍后刷新。"), remaining);
     $("service-state").dataset.state = "ready";
@@ -153,7 +184,7 @@ async function refresh() {
     pollTimer = setTimeout(refresh, Math.max(100, Math.min(5000, remaining / 2)));
   } catch (error) {
     if (ticket !== generation || document.hidden) return;
-    unavailable();
+    unavailable(error.message === "Invalid filters" ? "筛选条件无效，请调整日期或重置筛选。" : undefined);
     pollTimer = setTimeout(refresh, 5000);
   } finally {
     clearTimeout(timeout);
@@ -165,7 +196,18 @@ async function refresh() {
 }
 
 viewButtons.forEach((button) => button.addEventListener("click", () => { view = button.dataset.view; render(); }));
-$("category").addEventListener("change", render);
+Object.entries(filterControls).forEach(([key,id]) => $(id).addEventListener("change", () => {
+  if (key === "published" && $(id).value === "unknown") {
+    $("date-from").value = $("date-to").value = "";
+  } else if ((key === "from" || key === "to") && $(id).value) $("date-presence").value = "known";
+  $("date-from").disabled = $("date-to").disabled = $("date-presence").value === "unknown";
+  revalidate(); refresh();
+}));
+$("reset-filters").addEventListener("click", () => {
+  for (const [key,id] of Object.entries(filterControls)) $(id).value = ["from","to"].includes(key) ? "" : "all";
+  $("date-from").disabled = $("date-to").disabled = false;
+  view = "all"; revalidate(); render(); refresh();
+});
 $("refresh").addEventListener("click", refresh);
 window.addEventListener("offline", () => { ++generation; requestController?.abort(); unavailable("网络已断开，通知暂时隐藏。网络恢复后会重新获取。"); });
 window.addEventListener("online", refresh);

@@ -24,13 +24,13 @@ def write_report(root,name,report):
 
 
 def run(baseline,directory,*,execute=False):
-    baseline=Path(baseline).resolve();root=Path(directory).resolve()
+    baseline=Path(baseline).resolve();requested_root=Path(directory);root=requested_root.resolve()
     policy={'sources':sorted(SOURCE_IDS),'pages_per_source':1,'articles_per_source':3,
             'max_http_requests':15,'timeout_seconds':10,'http_retries':0,'interval_seconds':2.5,
             'attachment_downloads':0,'model_calls':0,'baseline_modified':False}
     if not execute:
         return {'mode':'preview','policy':policy,'output_created':False}
-    if not baseline.is_file() or root.exists():
+    if not baseline.is_file() or requested_root.is_symlink() or root.exists():
         raise ValueError('Baseline must exist and output directory must be NEW')
     catalog=load_sources()
     selected=[s for s in catalog if s.id in SOURCE_IDS and s.status=='verified' and s.parser_supported and s.adapter]
@@ -63,7 +63,11 @@ def run(baseline,directory,*,execute=False):
     final_hash=hashlib.sha256(baseline.read_bytes()).hexdigest()
     if final_hash!=baseline_hash:
         raise ValueError('Baseline changed during trial; do not claim a stable comparison')
-    summary={'mode':'bounded_live_extension_of_historical_copy','as_of':at.isoformat(),'policy':policy,
+    successful=(len(results)==len(selected) and all(r.get('success') for r in results)
+        and len(repeat)==1 and repeat[0].get('success') and repeat[0].get('unchanged')==1
+        and repeat[0].get('inserted')==0 and repeat[0].get('updated')==0)
+    summary={'mode':'bounded_live_extension_of_historical_copy','validation_status':'passed' if successful else 'failed',
+        'as_of':at.isoformat(),'policy':policy,
         'baseline_sha256_before':baseline_hash,'baseline_sha256_after':final_hash,
         'actual_http_requests':requests,'results':results,'repeat_results':repeat,
         'new_unique_originals':len(new_rows),'new_originals':new_rows,
@@ -76,11 +80,16 @@ def run(baseline,directory,*,execute=False):
     return summary
 
 
-if __name__=='__main__':
+def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--baseline-db',required=True,type=Path)
     parser.add_argument('--directory',required=True,type=Path)
     parser.add_argument('--run',action='store_true',help='Execute bounded real official requests; default previews only')
-    args=parser.parse_args()
+    args=parser.parse_args(argv)
     result=run(args.baseline_db,args.directory,execute=args.run)
     print(json.dumps({k:v for k,v in result.items() if k!='new_originals'},ensure_ascii=False,indent=2))
+    return 0 if result['mode']=='preview' or result['validation_status']=='passed' else 1
+
+
+if __name__=='__main__':
+    raise SystemExit(main())

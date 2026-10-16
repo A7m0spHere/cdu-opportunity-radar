@@ -33,6 +33,19 @@ def distribution(values):
             'median':median(values) if values else None, 'max':max(values) if values else None}
 
 
+def opening_quote(item, content, now):
+    clauses=[c.strip() for c in re.split(r'[。；\n]',content)]
+    if any(re.search(r'报名(?:开始|开放)?(?:时间|日期|入口|通道)?[^。；\n]{0,6}(?:另行通知|待定|未开放|未开始|暂停|停止|关闭)',c) for c in clauses):
+        return None
+    for clause in clauses:
+        if re.search(r'并非|不是|尚未|是否|若|如果|暂不|停止|未开始|无需|不接受|勿|误以为|说法|网传|未经确认|计划|拟于|暂定|预计',clause):
+            continue
+        if re.match(r'^(?:本(?:次|届)(?:竞赛|比赛|活动|项目)[，,:：]?\s*)?(?:即日起(?:开始|开放|接受|启动|正在)?报名|现(?:已)?开始报名|正在报名|报名(?:现)?已(?:经)?开始)',clause):
+            return clause
+    start=item['facts']['registration_start_date']
+    return start['quote'] if start and reference_datetime(start['value'])<=now else None
+
+
 def quality_counts(items, rows, analyzer, now):
     counts = dict(qualified=len(items), participation_candidates=0, possible=0,
                   opening_evidence_supported=0, registration_unknown=0,
@@ -48,7 +61,7 @@ def quality_counts(items, rows, analyzer, now):
         # student entry points merely because they contain competition/lecture.
         targets=re.findall(r'(?:^|\n)(?:[一二三四五六七八九十\d]+[、.．]\s*)?(?:参赛对象|报名对象|参与对象)[：:]\s*([^\n。；]+)',row['content'])
         non_student=bool(targets) and all(re.search(r'宿管老师|教职工|教师|科研人员',target)
-            and not re.search(r'学生|本科|研究生|师生|同学|不限|包括|例如|等|为主',target) for target in targets)
+            and not re.search(r'学生|本科|研究生|师生|同学|不限|包括|例如|等|为主|除外|排除|不要求|不需要|不含|并非|不是',target) for target in targets)
         administrative = result.category=='administrative' or '公示' in row['title']
         candidate = (result.category in PARTICIPATION and result.eligibility_status!='ineligible'
                      and not non_student and not administrative
@@ -63,12 +76,7 @@ def quality_counts(items, rows, analyzer, now):
         counts['rule_category_unknown'] += result.category=='unknown'
         counts['eligibility_unknown'] += result.eligibility_status=='uncertain'
         counts['expired_or_non_participation'] += (item['listing']=='history' or administrative or non_student or result.category=='news')
-        opening = next((clause.strip() for clause in re.split(r'[。；\n]',row['content'])
-            if re.search(r'即日起|现开始报名|正在报名|报名已开始',clause)
-            and not re.search(r'并非|不是|尚未|是否|若|如果|暂不|停止|未开始|无需|不接受',clause)), None)
-        start = item['facts']['registration_start_date']
-        if start and reference_datetime(start['value'])<=now:
-            opening = start['quote']
+        opening = opening_quote(item,row['content'],now)
         supported = bool(candidate and item['registration_status']=='possible' and opening
                          and result.eligibility_status=='eligible' and item['audience'])
         counts['opening_evidence_supported'] += supported
@@ -234,8 +242,11 @@ def quality_command(args):
         report=build_report(args.db,as_of=args.as_of,window_hours=args.window_hours,data_mode=args.data_mode)
         body=render_markdown(report) if args.format=='markdown' else json.dumps(report,ensure_ascii=False,indent=2)+'\n'
         if args.output:
-            output=args.output.resolve();db=args.db.resolve()
-            if output==db or output.name in {db.name+'-wal',db.name+'-shm',db.name+'-journal'} and output.parent==db.parent:
+            output=args.output.absolute();db=args.db.resolve()
+            if output.is_symlink():
+                raise ValueError('Output must not be a symbolic link')
+            resolved=output.resolve()
+            if resolved in (db,*(db.with_name(db.name+suffix) for suffix in ('-wal','-shm','-journal'))):
                 raise ValueError('Output must not overwrite the source database or its sidecars')
             # Exclusive creation also refuses symlinks/existing/private files.
             with output.open('x',encoding='utf-8',newline='\n') as handle:

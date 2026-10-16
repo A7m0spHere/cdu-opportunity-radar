@@ -11,6 +11,7 @@ DATE = re.compile(r"(?<!\d)(20\d{2})[-年/.](\d{1,2})[-月/.](\d{1,2})(?:日)?(?
 ARTICLE_PATH = re.compile(r"^/info/\d+/\d+\.htm$")
 LOG = logging.getLogger(__name__)
 LIST_SPECS = {
+    "campus": ("div[id^='div_items_id_']", ".div_itemtitle", None, ".other"),
     "innovation": ("div.right ul.list", "li", None, "span.sspan"),
     "art": ("ul.list-ul", "li", None, "span.sspan"),
     "film": ("ul.list-ul", "li", None, "span.sspan"),
@@ -66,7 +67,7 @@ class VsbAdapter:
             if anchor is None:
                 raise ParseError(f"{self.kind}: notice row has no article link")
             target = official_url(urljoin(url, anchor["href"]))
-            if not ARTICLE_PATH.fullmatch(urlsplit(target).path) and self.kind in {"computer","business","education"}:
+            if not ARTICLE_PATH.fullmatch(urlsplit(target).path) and self.kind in {"computer","business","education","campus"}:
                 raise ParseError(f"{self.kind}: unexpected article path: {target}")
             if self.kind in {"computer","education"}:
                 title = clean_text(anchor.get("title") or anchor.get_text("", strip=True))
@@ -124,7 +125,7 @@ class VsbAdapter:
         body = form.find(id=re.compile(r"^vsb_content(?:_\d+)?$"))
         if not body:
             raise ParseError(f"{url}: VSB article body missing")
-        if self.kind in {"computer","education"}:
+        if self.kind in {"computer","education","campus"}:
             heading = form.select_one(".div_title")
             if heading:
                 title = clean_text("".join(str(t) for t in heading.find_all(string=True, recursive=False)))

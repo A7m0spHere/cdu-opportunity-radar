@@ -85,6 +85,13 @@ def main(argv=None) -> int:
     auto=sub.add_parser('aggregate',help='Inspect automatic quality, category and time state; no human approval or LLM')
     auto.add_argument('--db',type=Path,required=True)
     auto.add_argument('--as-of')
+    quality=sub.add_parser('quality-report',help='Offline read-only quality snapshot; never migrates DB or calls a model')
+    quality.add_argument('--db',type=Path,required=True)
+    quality.add_argument('--as-of')
+    quality.add_argument('--window-hours',type=positive_int,default=72)
+    quality.add_argument('--data-mode',choices=['database_snapshot','offline_replay','mixed_baseline_and_live'],default='database_snapshot')
+    quality.add_argument('--format',choices=['json','markdown'],default='markdown')
+    quality.add_argument('--output',type=Path,help='New output file; existing files are refused')
     auto_server=sub.add_parser('serve-rss',help='Automatic aggregation RSS with live 503 gate; no approvals or models')
     auto_server.add_argument('--db',type=Path,required=True)
     auto_server.add_argument('--state-dir',type=Path,required=True)
@@ -140,6 +147,9 @@ def main(argv=None) -> int:
         command.add_argument("--as-of")
         command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
+    if args.command=='quality-report':
+        from .quality import quality_command
+        return quality_command(args)
     if args.command=='serve-lan-preview':
         from .lan_preview import serve_command
         return serve_command(args)

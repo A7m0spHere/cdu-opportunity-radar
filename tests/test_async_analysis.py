@@ -48,7 +48,8 @@ def local_run(a,n,p,sink):
     return a.analyze(n,p,sink),None
 
 
-def test_exact_input_dedup_source_update_and_raw_history_unchanged(store,tmp_path):
+def test_exact_input_dedup_source_update_and_raw_history_unchanged(store,tmp_path,monkeypatch):
+    monkeypatch.setattr('cdu_radar.rss.utc_now',lambda:NOW.isoformat())
     ident=seed(store);repo=AnalysisRepository(store);notice=repo.input(ident)
     repo.review(ident,'approved','historical only','synthetic tester')
     raw_before={t:[tuple(r) for r in store.db.execute('SELECT * FROM '+t)] for t in ['notices','notice_sources','notice_links','analysis_reviews','manual_labels','notice_analyses']}
@@ -413,3 +414,45 @@ def test_http_and_feed_never_run_or_expose_async_analysis(auto_service,tmp_path,
                 current=json.loads(current);old=json.loads(body)
                 for k in ['refreshed_at','valid_for_ms']:current.pop(k,None);old.pop(k,None)
                 assert current==old
+
+
+@pytest.mark.parametrize('bad_first',[True,False])
+def test_invalid_input_isolated_recorded_and_repaired_without_raw_writes(store,tmp_path,bad_first):
+    for ident in [1,2]:seed(store,ident)
+    bad=1 if bad_first else 2;good=3-bad
+    with store.db:store.db.execute("UPDATE notices SET published_at='2026-99-99' WHERE id=?",(bad,))
+    before=open(source(store),'rb').read();path=tmp_path/'q';a=analyzer()
+    with JobQueue(path,source(store)) as q:
+        scan=q.scan(a)
+        assert scan['scanned']==2 and scan['enqueued']==1 and scan['invalid_inputs']==1
+        assert q.scan(a)['enqueued']==0
+        assert q.report()['input_failure_count']==1 and len(q.report()['input_failures'])==1
+        assert q.report()['not_enqueued_count']==0
+        assert q.claim(a)['notice_id']==good
+        assert open(source(store),'rb').read()==before
+    with store.db:store.db.execute("UPDATE notices SET published_at='2026-10-01' WHERE id=?",(bad,))
+    with JobQueue(path,source(store)) as q:
+        assert q.scan(a)['enqueued']==1
+        assert q.report()['input_failure_count']==0 and q.report()['input_failures'][0]['state']=='resolved'
+
+
+def test_readonly_queue_contention_is_immediate_and_leaves_raw_unchanged(store,tmp_path):
+    seed(store);raw=source(store);path=tmp_path/'q'
+    with JobQueue(path,raw) as q:q.scan(analyzer())
+    before=open(raw,'rb').read()
+    locker=sqlite3.connect(path,isolation_level=None);locker.execute('BEGIN EXCLUSIVE')
+    try:
+        started=time.monotonic()
+        with pytest.raises(sqlite3.OperationalError):JobQueue(path,raw,read_only=True)
+        assert time.monotonic()-started<1
+    finally:locker.rollback();locker.close()
+    with JobQueue(path,raw,read_only=True) as q:assert q.report()['counts']=={'queued':1}
+    assert open(raw,'rb').read()==before
+
+
+def test_old_queue_is_readable_without_creating_failure_table(store,tmp_path):
+    seed(store);path=tmp_path/'q';raw=source(store)
+    with JobQueue(path,raw) as q:q.scan(analyzer());q.db.execute('DROP TABLE input_failures')
+    original=path.read_bytes()
+    with JobQueue(path,raw,read_only=True) as q:assert q.report()['input_failures']==[]
+    assert path.read_bytes()==original

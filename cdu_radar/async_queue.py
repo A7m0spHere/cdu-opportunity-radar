@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS attempts (
  finished_at REAL, state TEXT NOT NULL, error TEXT, prompt_tokens INTEGER,
  completion_tokens INTEGER,total_tokens INTEGER,estimated_cost REAL,currency TEXT,
  UNIQUE(job_id,ordinal));
+CREATE TABLE IF NOT EXISTS input_failures (
+ notice_id INTEGER NOT NULL,pipeline_version TEXT NOT NULL,error TEXT NOT NULL,
+ observed_at REAL NOT NULL,resolved_at REAL,
+ PRIMARY KEY(notice_id,pipeline_version));
 '''
 RETRYABLE = {'timeout','connection','rate_limited','server_error','worker_lost'}
 ERRORS = RETRYABLE | {'authentication','forbidden','http_error','response_too_large',
@@ -86,15 +90,15 @@ class JobQueue:
         self.policy, self.clock = policy or QueuePolicy(), clock
         if not read_only:self.path.parent.mkdir(parents=True,exist_ok=True)
         self.db=sqlite3.connect(self.path.as_uri()+'?mode=ro' if read_only else self.path,
-                               uri=read_only,timeout=10,isolation_level=None)
+                               uri=read_only,timeout=0 if read_only else 10,isolation_level=None)
         self.db.row_factory=sqlite3.Row
         self.db.execute('PRAGMA foreign_keys=ON')
         # Refuse accidental use of an existing application database before any DDL.
-        tables={r[0] for r in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        if tables and not tables<={'metadata','jobs','attempts'}:
-            self.db.close();raise ValueError('State database is not an M7 queue')
-        if not read_only:self.db.executescript(SCHEMA)
         try:
+            tables={r[0] for r in self.db.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if tables and not tables<={'metadata','jobs','attempts','input_failures'}:
+                raise ValueError('State database is not an M7 queue')
+            if not read_only:self.db.executescript(SCHEMA)
             with self.transaction(read_only=read_only):
                 for key,value in {'schema':'m7-queue-v1','raw_path':str(self.raw_path),
                                   'raw_identity':self._raw_identity()}.items():
@@ -134,10 +138,20 @@ class JobQueue:
         with source_snapshot(self.raw_path) as repo:
             ids=[r[0] for r in repo.db.execute('SELECT id FROM notices WHERE id>? ORDER BY id LIMIT ?',
                                              (cursor,self.policy.scan_limit))]
-            notices=[repo.input(i) for i in ids]
+            notices=[];invalid=[]
+            for ident in ids:
+                try:notices.append(repo.input(ident))
+                except (ValueError,TypeError):invalid.append(ident)
         now=self.clock();inserted=0
         with self.transaction():
+            for ident in invalid:
+                self.db.execute('''INSERT INTO input_failures VALUES (?,?,'invalid_input',?,NULL)
+                    ON CONFLICT(notice_id,pipeline_version) DO UPDATE SET
+                    error=excluded.error,observed_at=excluded.observed_at,resolved_at=NULL''',
+                    (ident,analyzer.version,now))
+                self.db.execute("UPDATE jobs SET state='stale',error='source_changed',updated_at=?,lease_token=NULL WHERE notice_id=? AND state!='stale'",(now,ident))
             for notice in notices:
+                self.db.execute('UPDATE input_failures SET resolved_at=? WHERE notice_id=? AND resolved_at IS NULL',(now,notice.notice_id))
                 self.db.execute("UPDATE jobs SET state='stale',error='source_changed',updated_at=?,lease_token=NULL WHERE notice_id=? AND input_hash!=? AND state!='stale'",
                                 (now,notice.notice_id,notice.input_hash))
                 reason=analyzer.skip_reason(notice)
@@ -168,7 +182,7 @@ class JobQueue:
             next_cursor=ids[-1] if len(ids)==self.policy.scan_limit else 0
             self.db.execute('INSERT INTO metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(next_cursor)))
             self.db.execute("INSERT INTO metadata VALUES ('active_pipeline',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(analyzer.version,))
-        return {'scanned':len(notices),'enqueued':inserted,'cursor':next_cursor,'model_requests':0}
+        return {'scanned':len(ids),'invalid_inputs':len(invalid),'enqueued':inserted,'cursor':next_cursor,'model_requests':0}
 
     def _fail(self, job, error, now):
         retry=error in RETRYABLE and job['attempts']<self.policy.max_attempts
@@ -194,7 +208,7 @@ class JobQueue:
             self.ensure_source()
             try:
                 with source_snapshot(self.raw_path) as repo:notice=repo.input(job['notice_id'])
-            except (ValueError,sqlite3.Error,OSError):
+            except (ValueError,TypeError,sqlite3.Error,OSError):
                 self.db.execute("UPDATE jobs SET state='stale',error='source_unavailable',updated_at=? WHERE id=?",(now,job['id']))
                 return None
             if notice.input_hash!=job['input_hash']:
@@ -245,7 +259,7 @@ class JobQueue:
                 self.ensure_source()
                 with source_snapshot(self.raw_path) as repo:current=repo.input(job['notice_id'])
                 changed=current.input_hash!=job['input_hash']
-            except (ValueError,sqlite3.Error,OSError):changed=True
+            except (ValueError,TypeError,sqlite3.Error,OSError):changed=True
             if changed:
                 self.db.execute("UPDATE jobs SET state='stale',error='source_changed',updated_at=?,lease_token=NULL,lease_until=NULL WHERE id=?",(now,job['id']))
             elif error:self._fail(job,error,now)
@@ -257,7 +271,7 @@ class JobQueue:
 
     def report(self, *, analyzer=None, include_results=False):
         self.ensure_source()
-        jobs=[]
+        jobs=[];input_failures=[]
         current_ids=set()
         active=self.db.execute("SELECT value FROM metadata WHERE key='active_pipeline'").fetchone()
         version=analyzer.version if analyzer else active[0] if active else None
@@ -266,7 +280,7 @@ class JobQueue:
                 item={k:row[k] for k in ['id','notice_id','input_hash','content_hash','pipeline_version','model','prompt_version',
                     'schema_version','rule_version','mode','state','attempts','error','created_at','updated_at','next_at']}
                 try:current=repo.input(row['notice_id']).input_hash==row['input_hash']
-                except ValueError:current=False
+                except (ValueError,TypeError):current=False
                 item['stored_state']=row['state']
                 if not current:item['state']='stale'
                 elif version and row['pipeline_version']!=version:item['state']='outdated'
@@ -274,8 +288,17 @@ class JobQueue:
                 if include_results and item['state'] in {'succeeded','partial'}:item['result']=json.loads(row['result'])
                 if current and (not version or row['pipeline_version']==version):current_ids.add(row['notice_id'])
                 jobs.append(item)
+            # Older private queues remain readable without a read-time migration.
+            if self.db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='input_failures'").fetchone():
+                for row in self.db.execute('SELECT * FROM input_failures ORDER BY notice_id,pipeline_version'):
+                    item=dict(row)
+                    try:repo.input(row['notice_id']);item['state']='resolved'
+                    except (ValueError,TypeError):item['state']='failed'
+                    input_failures.append(item)
+                    if item['state']=='failed' and (not version or row['pipeline_version']==version):current_ids.add(row['notice_id'])
             unqueued=[r[0] for r in repo.db.execute('SELECT id FROM notices ORDER BY id') if r[0] not in current_ids]
         return {'schema_version':1,'scope':'private_analysis_only','publication_permission':False,
+            'input_failures':input_failures,'input_failure_count':sum(f['state']=='failed' and (not version or f['pipeline_version']==version) for f in input_failures),
             'not_enqueued_count':len(unqueued),'not_enqueued_ids':unqueued[:100],
             'jobs':jobs,'counts':{state:sum(j['state']==state for j in jobs) for state in sorted({j['state'] for j in jobs})}}
 

@@ -102,7 +102,7 @@ def recheck(store, fetcher, sources, *, limit=3, stop_event=None, clock=referenc
             article = replace(article, content_source_id=final_unit)
             checked = clock()
             # No list timestamp fallback: the old discovery date must not mask an update.
-            result = store.save_notice(origin, url, article, seen_at=checked.isoformat())
+            result = store.save_notice(origin, url, article, seen_at=checked.isoformat(), discovered=False)
             results.append({'notice_id':row['id'], 'result':result})
         except RequestBudgetExceeded:
             with store.db:

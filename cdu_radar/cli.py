@@ -95,6 +95,9 @@ def main(argv=None) -> int:
     auto_server.add_argument('--collect-interval',type=float,default=0,help='Optional bounded collection every N seconds (>=60); 0 serves DB only')
     auto_server.add_argument('--source',action='append')
     auto_server.add_argument('--limit',type=positive_int,default=3)
+    auto_server.add_argument('--recheck-limit',type=positive_int,default=3,help='Due original pages per round (default 3)')
+    auto_server.add_argument('--request-budget',type=int,choices=range(6,501),metavar='6..500',default=48,
+                             help='Wire requests per round, including robots/redirects/retries; half reserved for originals')
     auto_server.add_argument('--no-env-proxy',action='store_true')
     lan=sub.add_parser('serve-lan-preview',help='Explicit device-allowlisted read proxy; never changes the loopback RSS listener')
     lan.add_argument('--bind',required=True,help='Specific RFC1918 device IPv4, never 0.0.0.0')

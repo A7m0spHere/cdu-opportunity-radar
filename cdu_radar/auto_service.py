@@ -110,7 +110,7 @@ def serve_command(args):
         server=make_server(controller,args.bind,args.port)
         controller.start(args.interval)
         if args.collect_interval:
-            from .collect import collect
+            from .recheck import collect_cycle, initialize as initialize_rechecks
             from .http import Fetcher
             from .sources import load_sources
             from .storage import Store
@@ -123,10 +123,13 @@ def serve_command(args):
                         # mode=rw refuses to recreate a deleted live source DB.
                         with controller.writer() as repo:
                             store=Store.__new__(Store);store.db=repo.db
+                            initialize_rechecks(store.db)
                             store.sync_sources(catalog)
                             with Fetcher(timeout=12,retries=0,interval=2.5,sleep=stop.wait,
-                                    trust_env=not args.no_env_proxy,event_sink=store.request_event) as fetcher:
-                                collect(store,fetcher,sources,limit=args.limit,max_pages=1,stop_event=stop)
+                                    trust_env=not args.no_env_proxy,event_sink=store.request_event,stop_event=stop) as fetcher:
+                                collect_cycle(store,fetcher,sources,limit=args.limit,
+                                    recheck_limit=getattr(args,'recheck_limit',3),
+                                    request_budget=getattr(args,'request_budget',48),stop_event=stop)
                     except ERRORS:
                         LOG.warning('Automatic collection failed; source health gate remains active')
                     controller.wakeup.set()

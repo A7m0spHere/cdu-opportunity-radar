@@ -50,6 +50,8 @@ class Store:
         self._migrate()
         from .auto_publish import initialize
         initialize(self.db)
+        from .recheck import initialize as initialize_rechecks
+        initialize_rechecks(self.db)
 
     def _migrate(self):
         """Append-only, transactional M0→M1 migration; never recreate notices."""
@@ -115,7 +117,14 @@ class Store:
                 self.db.execute("UPDATE notices SET content_domain=?,content_source_id=? WHERE id=?",
                                 (host,unit[0] if unit else None,row["id"]))
 
-    def save_notice(self, source_id: str, url: str, article: Article, seen_at: str | None = None, *, discovery_published_at=None) -> str:
+    def record_discovery(self, notice_id, source_id, at, published_at):
+        """Record list-page evidence inside the caller's transaction; no health renewal."""
+        self.db.execute("""INSERT INTO notice_sources (notice_id,source_id,first_seen_at,last_seen_at,published_at) VALUES (?,?,?,?,?)
+            ON CONFLICT(notice_id,source_id) DO UPDATE SET last_seen_at=excluded.last_seen_at,
+            published_at=COALESCE(excluded.published_at,notice_sources.published_at)""",
+            (notice_id, source_id, at, at, published_at))
+
+    def save_notice(self, source_id: str, url: str, article: Article, seen_at: str | None = None, *, discovery_published_at=None, discovered=True) -> str:
         now = seen_at or utc_now()
         digest = hashlib.sha256(article.content.encode("utf-8")).hexdigest()
         names_by_url = {}
@@ -150,18 +159,24 @@ class Store:
             self.db.execute("UPDATE notices SET content_domain=?,content_source_id=? WHERE id=?",(domain,content_source_id,notice_id))
             self.db.execute("DELETE FROM notice_links WHERE notice_id=?",(notice_id,))
             self.db.executemany("INSERT INTO notice_links VALUES (?,?,?,?)",[(notice_id,*link) for link in links])
-            self.db.execute("""INSERT INTO notice_sources (notice_id,source_id,first_seen_at,last_seen_at,published_at) VALUES (?,?,?,?,?)
-                ON CONFLICT(notice_id,source_id) DO UPDATE SET last_seen_at=excluded.last_seen_at,published_at=excluded.published_at""",
-                (notice_id, source_id, now, now, discovery_published_at or article.published_at))
+            if discovered:
+                self.record_discovery(notice_id,source_id,now,discovery_published_at or article.published_at)
             from .auto_publish import parsed
             parsed(self.db,notice_id,now,changed=result=='updated')
+            from .recheck import succeeded
+            succeeded(self.db,notice_id,now)
         return result
 
-    def fail_notice(self, url, failure):
+    def fail_notice(self, url, failure, *, at=None):
         from .auto_publish import failed
         status = 'parse_failed' if isinstance(failure, ParseError) else 'unavailable'
+        now = at or utc_now()
         with self.db:
-            failed(self.db,url,status,failure.category,utc_now())
+            failed(self.db,url,status,failure.category,now)
+            row = self.db.execute('SELECT id FROM notices WHERE canonical_url=?', (url,)).fetchone()
+            if row:
+                from .recheck import unsuccessful
+                unsuccessful(self.db,row['id'],now,failure.category)
 
     def request_event(self, source_id, url, requested_at, attempt, status_code, error, elapsed_ms):
         with self.db:

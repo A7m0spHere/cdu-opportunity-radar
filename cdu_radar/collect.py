@@ -6,11 +6,12 @@ from urllib.parse import urlsplit
 from .adapters import ARTICLE_PATH, VsbAdapter, article_adapter
 from .models import ParseError, RadarError, Source, utc_now
 from .sources import content_source
+from .http import RequestBudgetExceeded
 
 LOG = logging.getLogger(__name__)
 
 
-def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages: int = 1, stop_event=None) -> list[dict]:
+def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages: int = 1, stop_event=None, skip_known=False) -> list[dict]:
     if limit <= 0 or max_pages <= 0:
         raise ValueError("limit and max_pages must be positive")
     summaries = []
@@ -42,6 +43,13 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                     if link.canonical_url in seen_articles:
                         counts["duplicates"] += 1
                         continue
+                    if skip_known:
+                        known = store.db.execute('SELECT id FROM notices WHERE canonical_url=?', (link.canonical_url,)).fetchone()
+                        if known:
+                            with store.db:
+                                store.record_discovery(known['id'],source.id,utc_now(),link.published_at)
+                            counts['duplicates'] += 1
+                            continue
                     if len(seen_articles) >= limit:
                         break
                     seen_articles.add(link.canonical_url)
@@ -64,6 +72,8 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                         result = store.save_notice(source.id, canonical, article, discovery_published_at=link.published_at)
                         counts[result] += 1
                         counts["duplicates"] += result in {"updated","unchanged"}
+                    except RequestBudgetExceeded:
+                        raise
                     except RadarError as exc:
                         store.fail_notice(link.canonical_url, exc)
                         if canonical != link.canonical_url:
@@ -74,6 +84,10 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                         failures.append(exc)
                         LOG.error("source=%s category=%s scope=%s article_error=%s", source.id,exc.category,exc.scope,exc)
                 next_url = adapter.next_page(html, final_url, source.column_url) if len(seen_articles)<limit and counts["pages_read"]<max_pages else None
+        except RequestBudgetExceeded:
+            # A local scheduling limit is not evidence that the source failed.
+            summaries.append({'source':source.id, **counts, 'success':False, 'error_category':'budget'})
+            break
         except RadarError as exc:
             counts["failed"] += 1
             counts["parse_failures"] += isinstance(exc,ParseError)

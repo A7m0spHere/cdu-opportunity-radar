@@ -47,6 +47,11 @@ class FetchError(RadarError):
         self.category, self.scope, self.retryable = category, scope, retryable
 
 
+class RequestBudgetExceeded(FetchError):
+    def __init__(self):
+        super().__init__('Collection request budget exhausted or stopped', 'budget', 'local', True)
+
+
 def classify_exception(exc):
     """Keep the distinction between DNS, TLS, proxy and temporary request errors."""
     chain = []
@@ -75,9 +80,11 @@ def classify_exception(exc):
 class Fetcher:
     def __init__(self, *, timeout=20.0, retries=2, interval=2.0, trust_env=True,
                  transport=None, event_sink=None, sleep=time.sleep, clock=time.monotonic,
-                 allowed_hosts=None, resolve=None):
+                 allowed_hosts=None, resolve=None, request_limit=None, stop_event=None):
         if timeout <= 0 or retries < 0 or interval < 0:
             raise ValueError("Invalid request policy")
+        if request_limit is not None and request_limit <= 0:
+            raise ValueError('request_limit must be positive')
         if allowed_hosts is None:
             from .sources import trusted_hosts
             allowed_hosts = trusted_hosts()
@@ -96,6 +103,7 @@ class Fetcher:
         self.delays = {}
         self.event_sink = event_sink
         self.source_id = None
+        self.request_limit, self.request_count, self.stop_event = request_limit, 0, stop_event
 
     def _trusted_url(self, url):
         normalized = official_url(url)
@@ -116,6 +124,10 @@ class Fetcher:
                 pause = max(self.interval, self.delays.get(origin, 0)) - (self.clock() - self.last_request)
                 if pause > 0:
                     self.sleep(pause)
+            if ((self.stop_event is not None and self.stop_event.is_set()) or
+                    self.request_limit is not None and self.request_count >= self.request_limit):
+                raise RequestBudgetExceeded()
+            self.request_count += 1
             start, requested_at = self.clock(), utc_now()
             self.last_request = start
             response, error = None, None
@@ -200,6 +212,8 @@ class Fetcher:
                     delay = max(delay, rate.seconds / rate.requests)
                 self.delays[origin] = delay
                 self.robots[origin] = parser
+            except RequestBudgetExceeded:
+                raise
             except FetchError as exc:
                 # Cache failures too, to avoid repeatedly hitting a broken origin.
                 self.robots[origin] = exc

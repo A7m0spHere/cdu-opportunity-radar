@@ -1,5 +1,7 @@
 # CDU Opportunity Radar · 校园机会雷达
 
+[![Offline CI](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml/badge.svg)](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml)
+
 面向成都大学学生的校园通知聚合工具。把比赛、科研与创新实践、AI / 计算机相关活动及其他校园信息放在一处浏览，每条通知都能直接打开官方原文。
 
 **可信来源自动采集 · 网页直接阅读 · RSS 订阅 · 无需逐条人工审批**
@@ -16,7 +18,7 @@ Python 3.11+ · [AGPL-3.0-only](LICENSE) · 本地 MVP，有限体验准备阶�
 - **保留不确定性**：缺少报名依据时明确显示“报名状态未确认”；当前机会可以为空。
 - **阻止无效内容**：来源未验证、解析异常、原文失效或撤回的信息不作为有效通知发布；服务故障返回 503，网页隐藏旧数据。
 
-当前为本地 MVP 与有限体验准备阶段。最新全量测试 **713 项通过**；一次受控真实采集得到 **17 篇原始通知、15 篇合格聚合、2 篇参与候选、0 篇明确仍可报名**。这是有界样本，不能代表全校通知覆盖率或当前机会总数。[查看验收记录](docs/M4D_RESULTS.md)
+当前为本地 MVP 与有限体验准备阶段。最新 Windows 本地全量测试 **731 项通过**（[M5-A](docs/M5A_RECHECK_CI.md)）；此前一次受控真实采集得到 **17 篇原始通知、15 篇合格聚合、2 篇参与候选、0 篇明确仍可报名**。这是有界样本，不能代表全校通知覆盖率或当前机会总数。[查看实采验收记录](docs/M4D_RESULTS.md)
 
 ## 快速开始
 
@@ -107,6 +109,8 @@ python3 -m venv .venv
 ```
 
 Linux 将解释器替换为 `.venv/bin/python`。常规测试使用隔离数据库、裁剪 HTML、Mock 与环回 HTTP，不访问外网或调用付费模型。`requirements-lock.txt` 是已验证环境的依赖快照，不代表所有平台均已通过。
+
+PR 与 main push 的离线 CI 覆盖 Windows / Ubuntu、Python 3.11 / 3.12，并从安装后的 wheel 检查 CLI 与网页静态资源。CI 不替代 Linux 实机、手机或生产长期运行验收。[原文复查机制与验证说明](docs/M5A_RECHECK_CI.md)。
 
 复现实采可使用 `scripts/validate_trial_live.py --directory artifacts/trial-new`，须通过上述虚拟环境 Python 从仓库根目录执行，输出目录必须不存在。**该脚本会访问既有官方来源**；测试数据库、日志与采集结果留在被 Git 忽略的本地目录。真实 HTML 夹具的裁剪和出处见 [样本说明](tests/fixtures/README.md)。
 

@@ -17,7 +17,7 @@
       <span class="brand-mark" aria-hidden="true"><i></i></span>
       <span>校园机会雷达<small>CDU CAMPUS BULLETIN</small></span>
     </a>
-    <a class="rss-link" href="/feed.xml">RSS 订阅 <span aria-hidden="true">↗</span></a>
+    <a class="rss-link" href="/feed.xml">全部 RSS 订阅 <span aria-hidden="true">↗</span></a>
   </header>
   <main class="wrap">
     <section class="intro" aria-labelledby="page-title">
@@ -36,6 +36,11 @@
       </div>
     </section>
     <p class="replay-note" id="replay-note" hidden>离线样本预览 · 时间按回放参考时点计算，未重新检查原文的实时可达性。</p>
+    <div class="selection-switch" role="group" aria-label="全部与精选">
+      <button type="button" data-selection="all" aria-pressed="true">全部信息</button>
+      <button type="button" data-selection="featured" aria-pressed="false">重要精选</button>
+      <p>全部保留合格原文；精选依据重要性建议与原文复核，不等同当前可报名。</p>
+    </div>
     <section class="toolbar" aria-label="通知筛选">
       <div class="views" role="group" aria-label="信息范围">
         <button type="button" data-view="all" aria-pressed="true">最新通知 <span data-count="all">—</span></button>
@@ -67,11 +72,13 @@
         </div>
       </div></details>
       <p class="filter-help">条件取交集；日期筛选只使用来源发布日期，不用采集日期补齐。未分类信息仍可在全部信息中查看。</p>
+      <p class="subscription-note" id="subscription-note">当前筛选的 RSS 订阅尚未开放。页首 RSS 订阅提供全部合格信息。</p>
     </section>
     <div class="content-grid">
       <section id="notices" class="notice-section" aria-labelledby="list-title" tabindex="-1">
         <div class="section-heading"><h2 id="list-title">最新通知</h2><span id="result-count" aria-live="polite">正在获取通知</span></div>
         <p class="view-note" id="view-note">原文发布日期优先；日期未提供时，按首次收录时间排序。</p>
+        <p class="featured-state" id="featured-state" role="status" hidden></p>
         <div class="message-state" id="message" role="status" aria-live="polite">
           <span class="state-symbol" aria-hidden="true">◌</span>
           <h3 id="message-title">正在获取校园信息</h3><p id="message-copy">请稍候。</p>
@@ -97,6 +104,7 @@
         <h3 class="notice-title"></h3>
         <p class="source-name"></p>
         <p class="summary"></p>
+        <details class="featured-reason" hidden><summary>为什么入选精选</summary><p class="featured-basis"></p><ul class="featured-evidence"></ul><p class="featured-boundary"></p></details>
         <div class="card-bottom"><span class="checked-at"></span><a class="original-link" target="_blank" rel="noopener noreferrer"><span>查看官方原文</span><span aria-hidden="true">↗</span></a></div>
         <p class="source-url"></p>
       </div>

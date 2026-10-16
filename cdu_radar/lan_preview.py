@@ -7,13 +7,14 @@ import sys
 import threading
 
 from .taxonomy import API_V2, query_values, validate_public_v2
+from .featured_api import API_V3, split_query, validate_public_v3
 from .models import InvalidFilter
 
 CONTRACT='student-notices-v1'
 PRIVATE=tuple(ipaddress.ip_network(n) for n in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16'))
 PUBLIC_ROUTES={
     '/':'text/html','/app.css':'text/css','/app.js':'text/javascript','/favicon.svg':'image/svg+xml',
-    '/api/notices':'application/json',API_V2:'application/json','/feed.xml':'application/rss+xml',
+    '/api/notices':'application/json',API_V2:'application/json',API_V3:'application/json','/feed.xml':'application/rss+xml',
     '/current.xml':'application/rss+xml','/history.xml':'application/rss+xml','/health':'application/json',
 }
 MAX_BYTES=2*1024*1024
@@ -23,6 +24,9 @@ TOP_FIELDS={'schema_version','items','categories','counts','refreshed_at','data_
 
 
 def public_route(path):
+    if path.startswith(API_V3+'?'):
+        split_query(path)
+        return API_V3
     if path.startswith(API_V2+'?'):
         query_values(path)
         return API_V2
@@ -58,7 +62,7 @@ def upstream_read(port,path,etag=None):
         if len(body)>MAX_BYTES:raise ValueError('Upstream response exceeds preview limit')
         if response.getheader('X-CDU-Public-Contract')!=CONTRACT:raise ValueError('Unexpected upstream service')
         mime=(response.getheader('Content-Type') or '').split(';',1)[0]
-        if response.status not in ({200,304,400,503} if route==API_V2 else {200,304,503}):raise ValueError('Unexpected upstream status')
+        if response.status not in ({200,304,400,503} if route in {API_V2,API_V3} else {200,304,503}):raise ValueError('Unexpected upstream status')
         if response.status==200 and mime!=PUBLIC_ROUTES[route]:raise ValueError('Unexpected upstream content')
         if response.status==304 and (path not in {'/feed.xml','/current.xml','/history.xml'} or not etag):
             raise ValueError('Unexpected conditional response')
@@ -68,6 +72,7 @@ def upstream_read(port,path,etag=None):
                     not isinstance(data.get('items'),list) or any(not isinstance(i,dict) or set(i)!=ITEM_FIELDS for i in data['items'])):
                 raise ValueError('Unexpected public JSON fields')
         if response.status==200 and route==API_V2:validate_public_v2(json.loads(body))
+        if response.status==200 and route==API_V3:validate_public_v3(json.loads(body))
         if response.status==400:return 400,b'Invalid notice filters\n','text/plain; charset=utf-8',None
         return response.status,body,response.getheader('Content-Type'),response.getheader('ETag')
     finally:connection.close()

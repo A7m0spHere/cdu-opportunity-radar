@@ -18,7 +18,7 @@ Python 3.11+ · [AGPL-3.0-only](LICENSE) · 本地 MVP，有限体验准备阶�
 - **保留不确定性**：缺少报名依据时明确显示“报名状态未确认”；当前机会可以为空。
 - **阻止无效内容**：来源未验证、解析异常、原文失效或撤回的信息不作为有效通知发布；服务故障返回 503，网页隐藏旧数据。
 
-当前为本地 MVP 与有限体验准备阶段。最新 Windows 本地全量测试 **733 项通过**（[M5-A](docs/M5A_RECHECK_CI.md)）；此前一次受控真实采集得到 **17 篇原始通知、15 篇合格聚合、2 篇参与候选、0 篇明确仍可报名**。这是有界样本，不能代表全校通知覆盖率或当前机会总数。[查看实采验收记录](docs/M4D_RESULTS.md)
+当前为本地 MVP 与有限体验准备阶段。离线回归覆盖 **774 项**，分平台通过/跳过及 CI 结果见[验证记录](docs/M5B_RESULTS.md)；M5-B 新增学生处、团委两个栏目，隔离实采新增 **6 篇独立原文、6 篇合格信息、0 篇新增参与候选/明确开放证据**。有界样本不代表全校覆盖率或当前机会总数。
 
 ## 快速开始
 
@@ -90,7 +90,7 @@ python3 -m venv .venv
 
 ## 当前边界
 
-- **来源覆盖**：当前实现并验证了 9 个采集来源。来源目录中的候选栏目、可访问页面和 `pending` 单位不等于可自动发布来源。[来源清单](docs/SOURCES.md)
+- **来源覆盖**：当前实现并验证了 11 个采集栏目。来源目录中的候选栏目、可访问页面和 `pending` 单位不等于可自动发布来源。[来源清单](docs/SOURCES.md)
 - **采集覆盖**：定时任务有文章和页数上限，尚无完整的跨轮补采与旧通知复查调度；集中新增或较早通知更新可能未被覆盖。
 - **有效性**：最近成功原文检查超过 72 小时的通知停止公开，等待重新采集。数据库中的历史记录保留；历史列表也受有效性检查约束。
 - **内容理解**：摘要为原文节选，日期与资格采用保守规则。附件仅记录名称和链接，尚未读取其正文；多赛道或不明确的条件保持未知。
@@ -114,6 +114,8 @@ PR 与 main push 的离线 CI 覆盖 Windows / Ubuntu、Python 3.11 / 3.12，并
 
 复现实采可使用 `scripts/validate_trial_live.py --directory artifacts/trial-new`，须通过上述虚拟环境 Python 从仓库根目录执行，输出目录必须不存在。**该脚本会访问既有官方来源**；测试数据库、日志与采集结果留在被 Git 忽略的本地目录。真实 HTML 夹具的裁剪和出处见 [样本说明](tests/fixtures/README.md)。
 
+离线只读报告：`python -m cdu_radar quality-report --db <数据库路径> --format markdown`，默认输出 72 小时窗口与全库质量快照，不联网、不迁移数据库。历史数据加 `--as-of` 和 `--data-mode offline_replay`；输出字段、未知状态和精确延迟不可计算的边界见 [质量报告](docs/QUALITY_REPORT.md)。两个新增栏目的有界实采与扩展前后比较使用 [M5-B 验证脚本](scripts/validate_sources_trial.py)，默认只预览，显式 `--run` 才联网。
+
 提交问题时，请提供来源 URL、失败类别、复现命令和必要的脱敏输出。通知类别或日期解析修复应补充边界样例；不要提交数据库、完整学生名单、凭据或私人日志。
 
 ## 文档
@@ -124,6 +126,7 @@ PR 与 main push 的离线 CI 覆盖 Windows / Ubuntu、Python 3.11 / 3.12，并
 | 自动发布、来源与时间状态 | [AUTO_PUBLICATION](docs/AUTO_PUBLICATION.md) |
 | 局域网预览、手动验证与停止 | [LAN_PREVIEW](docs/LAN_PREVIEW.md) |
 | 最近真实采集和测试证据 | [M4-D 验收](docs/M4D_RESULTS.md) |
+| 只读质量报告与校级来源试点 | [质量报告](docs/QUALITY_REPORT.md) · [M5-B 结果](docs/M5B_RESULTS.md) |
 | 架构、来源目录与开发计划 | [架构](docs/ARCHITECTURE.md) · [来源](docs/SOURCES.md) · [计划](docs/PLAN.md) |
 | 历史分析和发布设计 | [分析契约](docs/ANALYSIS_CONTRACT.md) · [旧审批设计](docs/PUBLICATION.md) · [路线冻结决策](docs/M3B8_ROUTE_DECISION.md) |
 

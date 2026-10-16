@@ -18,7 +18,7 @@ Windows PowerShell：
 
 Linux 对应 `.venv/bin/python`，参数及相对路径相同。URI 使用 `Path.resolve().as_uri()`，临时文件和 XML 原子替换在同一目录；Windows 使用 msvcrt 锁，Linux 使用 fcntl 锁。中文、空格路径已在 Windows 测试；本轮没有 Linux 发行版可实际运行，不能据此声称 Linux 原生验收通过。
 
-第一条命令建库并做有界采集；随后后台每小时采集所选来源，每 10 秒刷新 Feed。`--collect-interval 0`（默认）仅自动发布库内新增/变更，不自行联网；省略 `--source` 的定时采集只访问已有 9 个 verified 且实现解析的栏目，每栏默认最多发现 3 篇新文章、1 页，并独立复查最多 3 篇到期原文。默认每轮最多 48 次真实 HTTP 请求，一半留给原文复查，robots/重定向/重试均计数；可用 `--request-budget 6..500` 和 `--recheck-limit` 调整。定时采集最低间隔 60 秒，沿用 robots、TLS、可信域名、3 MiB 上限；timeout=12 秒、retries=0、请求间隔至少 2.5 秒，不下载附件。`--no-env-proxy` 可显式关闭环境代理。[队列、退避与验证边界](M5A_RECHECK_CI.md)。
+第一条命令建库并做有界采集；随后后台每小时采集所选来源，每 10 秒刷新 Feed。`--collect-interval 0`（默认）仅自动发布库内新增/变更，不自行联网；省略 `--source` 的定时采集只访问已有 11 个 verified 且实现解析的栏目，每栏默认最多发现 3 篇新文章、1 页，并独立复查最多 3 篇到期原文。默认每轮最多 48 次真实 HTTP 请求，一半留给原文复查，robots/重定向/重试均计数；可用 `--request-budget 6..500` 和 `--recheck-limit` 调整。定时采集最低间隔 60 秒，沿用 robots、TLS、可信域名、3 MiB 上限；timeout=12 秒、retries=0、请求间隔至少 2.5 秒，不下载附件。`--no-env-proxy` 可显式关闭环境代理。[队列、退避与验证边界](M5A_RECHECK_CI.md)。
 
 Ctrl+C 结束服务和采集线程。服务仅绑定显式环回地址，数据库必须先存在，运行中删除库不会重建替代空库。使用本地 SQLite delete/truncate/persist 日志，WAL 拒绝服务；不会自动修改日志模式。状态目录必须专用且与数据库分开，不能复用旧批准服务目录。
 

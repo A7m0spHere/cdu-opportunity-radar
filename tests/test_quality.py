@@ -1,6 +1,7 @@
 import hashlib
 import json
 from pathlib import Path
+import os
 import sqlite3
 from datetime import timedelta
 
@@ -113,7 +114,11 @@ def test_window_is_half_open_and_updates_are_distinct_from_events(store):
     assert window['new_or_updated_unique_notices']==1
 
 
-@pytest.mark.parametrize('opening,expected', [('即日起正在报名。',1),('并非报名已开始。',0)])
+@pytest.mark.parametrize('opening,expected', [
+    ('即日起正在报名。',1),('并非报名已开始。',0),
+    ('即日起受理比赛咨询，报名开放时间另行通知。',0),
+    ('请勿误以为报名已开始。',0),('关于正在报名的说法尚未确认。',0),
+    ('本次竞赛即日起接受报名。',1)])
 def test_opening_requires_positive_body_evidence_not_future_deadline_alone(store,opening,expected):
     add(store,body='报名对象：我校全体本科生。'+opening+'报名截止：2026年10月20日。请按官方要求提供材料。')
     report=build_report(database(store),as_of=NOW+timedelta(hours=1))
@@ -140,10 +145,16 @@ def test_cli_new_file_and_refuse_database_or_existing_output(store,tmp_path,caps
     assert report['schema_version']==1 and '质量报告' in render_markdown(report)
     assert main(args)==2
     assert main(['quality-report','--db',str(path),'--output',str(path)])==2
+    if os.name=='nt':
+        sidecar=path.with_name(path.name.upper()+'-JOURNAL')
+        assert main(['quality-report','--db',str(path),'--output',str(sidecar)])==2
+        assert not sidecar.exists()
     assert digest(path)==before
 
 
-@pytest.mark.parametrize('target,expected',[('橙园社区全体宿管老师',0),('宿管老师和学生骨干',1),('不限于教师',1)])
+@pytest.mark.parametrize('target,expected',[
+    ('橙园社区全体宿管老师',0),('宿管老师和学生骨干',1),('不限于教师',1),
+    ('教师除外',1),('不要求教师身份',1)])
 def test_explicit_staff_target_excluded_without_guessing_mixed_audience(store,target,expected):
     add(store,body='合成校园竞赛通知。\n三、参与对象：\n'+target+'\n四、有关安排另行通知，本文没有明确报名截止日期。')
     report=build_report(database(store),as_of=NOW+timedelta(hours=1))
@@ -157,3 +168,19 @@ def test_credit_disclosure_is_not_a_lecture_entry_point(store):
     report=build_report(database(store),as_of=NOW+timedelta(hours=1))
     assert report['snapshot']['qualified']==report['snapshot']['administrative']==1
     assert report['snapshot']['participation_candidates']==0
+
+
+def test_quality_output_refuses_dangling_symlink_without_creating_target(store,tmp_path):
+    path=database(store);target=tmp_path/'must-not-create.json';link=tmp_path/'report-link.json'
+    try:
+        link.symlink_to(target)
+    except (OSError,NotImplementedError):
+        pytest.skip('Platform does not permit creating symbolic links')
+    assert main(['quality-report','--db',str(path),'--output',str(link)])==2
+    assert link.is_symlink() and not target.exists()
+
+
+def test_start_date_does_not_override_explicit_pending_opening(store):
+    add(store,body='报名对象：我校全体本科生。报名开始：2026年10月14日。报名截止：2026年10月20日。报名开放时间另行通知。')
+    report=build_report(database(store),as_of=NOW+timedelta(hours=1))
+    assert report['snapshot']['opening_evidence_supported']==0

@@ -1,5 +1,6 @@
 from pathlib import Path
 import hashlib
+import json
 
 import httpx
 import pytest
@@ -23,6 +24,18 @@ def test_existing_output_refused(store,tmp_path):
         trial.run(path,tmp_path,execute=True)
 
 
+def test_dangling_output_directory_link_refused(store,tmp_path):
+    path=Path(store.db.execute('PRAGMA database_list').fetchone()[2])
+    target=tmp_path/'must-not-create';link=tmp_path/'linked-output'
+    try:
+        link.symlink_to(target,target_is_directory=True)
+    except (OSError,NotImplementedError):
+        pytest.skip('Platform does not permit creating symbolic links')
+    with pytest.raises(ValueError,match='NEW'):
+        trial.run(path,link,execute=True)
+    assert not target.exists()
+
+
 def test_mock_trial_preserves_baseline_and_repeats_without_new_rows(store,tmp_path,monkeypatch):
     path=Path(store.db.execute('PRAGMA database_list').fetchone()[2]);before=hashlib.sha256(path.read_bytes()).hexdigest()
     def handler(req):
@@ -44,3 +57,20 @@ def test_mock_trial_preserves_baseline_and_repeats_without_new_rows(store,tmp_pa
     assert result['new_unique_originals']==6 and result['actual_http_requests']==12
     assert result['repeat_results'][0]['unchanged']==1
     assert result['baseline_sha256_before']==result['baseline_sha256_after']==before
+
+
+@pytest.mark.parametrize('failure',['http','budget'])
+def test_trial_cli_reports_failure_and_nonzero_exit_while_retaining_evidence(store,tmp_path,monkeypatch,capsys,failure):
+    path=Path(store.db.execute('PRAGMA database_list').fetchone()[2]);before=hashlib.sha256(path.read_bytes()).hexdigest()
+    def handler(req):
+        return httpx.Response(404 if req.url.path=='/robots.txt' else 503)
+    def factory(**kwargs):
+        kwargs['interval']=0
+        if failure=='budget':kwargs['request_limit']=1
+        return Fetcher(transport=httpx.MockTransport(handler),**kwargs)
+    monkeypatch.setattr(trial,'Fetcher',factory)
+    root=tmp_path/failure
+    assert trial.main(['--baseline-db',str(path),'--directory',str(root),'--run'])==1
+    result=json.loads((root/'result.json').read_text(encoding='utf-8'))
+    assert result['validation_status']=='failed'
+    assert hashlib.sha256(path.read_bytes()).hexdigest()==before

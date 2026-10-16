@@ -68,6 +68,8 @@ python3 -m venv .venv
 
 网页约每 5 秒获取一次数据，这与访问官方站点的采集间隔分别控制。默认自动路径不调用 LLM，不需要模型 Key、QQ、AstrBot 或 NapCat。
 
+另有独立的[私有异步分析 worker](docs/ASYNC_ANALYSIS.md)，支持离线 Mock、预算、重试和证据校验；它不参与网页/RSS 读取，不自动决定精选，本轮未调用真实模型。复现与边界见 [M7 验收](docs/M7_RESULTS.md)。
+
 ## 信息与接口
 
 ```text

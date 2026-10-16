@@ -167,9 +167,10 @@ class Provider(Protocol):
 
 
 class ChatCompletionsProvider:
-    def __init__(self, config, *, transport=None, sleep=time.sleep):
+    def __init__(self, config, *, transport=None, sleep=time.sleep, output_schema=None):
         self.config = config
         self.transport, self.sleep = transport, sleep
+        self.output_schema = output_schema
 
     def complete(self, messages, validator, *, event_sink=None):
         config = self.config
@@ -179,7 +180,9 @@ class ChatCompletionsProvider:
         if config.temperature is not None and not (config.protocol_profile == "deepseek" and config.thinking_mode == "enabled"): payload["temperature"] = config.temperature
         if config.thinking_mode is not None: payload["thinking"] = {"type": config.thinking_mode}
         if config.response_format == "json_schema":
-            if config.schema_mode == "screening_v2":
+            if self.output_schema is not None:
+                schema = self.output_schema
+            elif config.schema_mode == "screening_v2":
                 from .llm_screening import OUTPUT_SCHEMA as schema
             else:schema = OUTPUT_SCHEMA
             payload["response_format"] = {"type": "json_schema", "json_schema": {"name": "notice_analysis", "strict": True, "schema": schema}}

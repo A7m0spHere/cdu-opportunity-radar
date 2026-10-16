@@ -205,11 +205,15 @@ def test_export_failure_database_failure_and_recovery_fail_closed(service,monkey
     assert b'private-fixture' not in request(s)[2] and not c.output.exists()
     monkeypatch.setattr(rss_service,'export_approved',original)
     assert c.refresh() and request(s)[1]['ETag']==tag
-    db=root/'synthetic.sqlite3';saved=root/'saved.sqlite3';db.rename(saved)
+    db=root/'synthetic.sqlite3';saved=root/'saved.sqlite3'
+    # A complete client read can precede the handler's final DB close. Wait
+    # for that response lease before moving a SQLite file on Windows.
+    with c.lock:db.rename(saved)
     try:
         assert request(s,headers={'If-None-Match':tag})[0]==503
         assert request(s,'/health')[0]==503 and not db.exists()
-    finally:saved.rename(db)
+    finally:
+        with c.lock:saved.rename(db)
     assert c.refresh() and request(s)[0]==200
 
 

@@ -119,6 +119,10 @@ def import_labels(dataset_path, csv_path, labels_db, *, labeler, allow_synthetic
     # Resolve collision before creating any labels file. Do not open source or M2 databases writable.
     path=Path(labels_db).absolute()
     if path.is_symlink() or path.resolve() in {Path(dataset_path).resolve(),Path(csv_path).resolve()}:raise ValueError('Invalid label database path')
+    # SQLite owns these suffixes even when no side file exists yet. Creating a
+    # labels DB there can break the next source transaction or lose labels.
+    if any(str(candidate).casefold().endswith(('-journal','-wal','-shm')) for candidate in (path,path.resolve())):
+        raise ValueError('Label database cannot use a reserved SQLite sidecar path')
     prepared=[];seen=set();by_id={r['sample_id']:r for r in dataset['records']}
     with Path(csv_path).open(encoding='utf-8-sig',newline='') as stream:
         reader=csv.DictReader(stream)

@@ -363,3 +363,56 @@ def test_public_overview_rejects_hidden_fields_and_inconsistent_counts(auto_serv
     validate_public_v3(p)
     p['featured']['coverage']['pending']=0
     with pytest.raises(ValueError):validate_public_v3(p)
+
+
+@pytest.mark.parametrize('suffix',['-journal','-wal','-shm','-JOURNAL','-WAL','-SHM'])
+def test_label_database_refuses_sqlite_reserved_sidecars_before_creation(auto_service,tmp_path,suffix):
+    store,_,_,_,_=auto_service;fill(store,tmp_path);raw=raw_path(store);directory=tmp_path/'labels-dataset'
+    export_dataset(raw,directory,reference_time=NOW);csv_path=write_labels(directory)
+    destination=Path(str(raw)+suffix);original=raw.read_bytes()
+    with pytest.raises(ValueError,match='sidecar'):
+        import_labels(directory/'dataset.json',csv_path,destination,labeler='interface-test-reviewer')
+    assert not destination.exists() and raw.read_bytes()==original
+    add(store,url=URL.replace('990001','990099'))
+    assert store.db.execute('PRAGMA integrity_check').fetchone()[0]=='ok'
+
+
+@pytest.mark.parametrize('basis,criterion',[
+    ('本次助学金面向在校学生。','student_rights'),
+    ('请查看校园交通调整安排。','safety_service'),
+    ('国家级科研成果正式获批。','major_news'),
+])
+def test_public_evidence_window_preserves_late_criterion_and_literal_source(store,basis,criterion):
+    body='这是供审查用的普通合成说明，与入选依据分别记录。'*15+basis
+    assert 240<len(body)<500
+    store.save_notice('computer',URL,Article('合成普通通知','2026-10-15',body),seen_at=NOW.isoformat())
+    repo=AnalysisRepository.__new__(AnalysisRepository);repo.store=store;repo.db=store.db
+    n=repo.input(1);a,_=configuration(None,True);s,_=a.prepare(n);p=mock_payload(s)
+    p['importance']={'kind':'inference','level':'high','reason':'synthetic boundary','quotes':[body]}
+    analysis=validate(p,n,s,a,NOW);decision=FeaturedPolicy().decide(n,analysis,analysis['state'])
+    assert decision['decision']=='selected'
+    evidence=next(e for e in decision['evidence'] if e['criterion']==criterion)
+    assert basis in evidence['quote'] and evidence['quote'] in body and len(evidence['quote'])<=240
+
+
+def test_analysis_sqlite_lock_degrades_fast_without_blocking_legacy_rss(auto_service,tmp_path):
+    import threading
+    import time
+    store,c,s,_,_=auto_service;a,state,_=fill(store,tmp_path)
+    c.analysis_analyzer=a;c.analysis_state=state;c.data_mode='offline_replay';assert c.refresh()
+    rss=request(s,'/feed.xml')[2];response=[];errors=[]
+    locker=sqlite3.connect(state,isolation_level=None);locker.execute('BEGIN EXCLUSIVE')
+    def fetch():
+        try:response.append(v3(s))
+        except Exception as exc:errors.append(type(exc).__name__)
+    worker=threading.Thread(target=fetch,daemon=True)
+    try:
+        started=time.monotonic();worker.start();worker.join(2)
+        assert not worker.is_alive(), 'Optional analysis lock exceeded response budget'
+        assert not errors and response[0][0]==200
+        assert response[0][2]['featured']['state']=='degraded' and response[0][2]['counts']['all']==7
+        for path in ['/feed.xml','/api/notices','/api/notices/v2']:
+            assert request(s,path)[0]==200
+        assert request(s,'/feed.xml')[2]==rss and time.monotonic()-started<3
+    finally:locker.rollback();locker.close();worker.join(12)
+    assert v3(s,'?selection=featured')[2]['counts']['all']==3

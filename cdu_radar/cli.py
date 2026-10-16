@@ -26,6 +26,8 @@ def main(argv=None) -> int:
             stream.reconfigure(encoding='utf-8')
     parser = argparse.ArgumentParser(description="CDU automatic official notice aggregation, safe RSS and offline evaluation")
     sub = parser.add_subparsers(dest="command", required=True)
+    from .async_cli import register as register_async_queue
+    register_async_queue(sub)
     listing = sub.add_parser("sources", help="Show catalog and current SQLite state")
     collection = sub.add_parser("collect", help="Collect bounded official pages, no publishing")
     export = sub.add_parser("export-rss", help="Legacy technical diagnostic export; use serve-rss for automatic aggregation")
@@ -149,6 +151,9 @@ def main(argv=None) -> int:
         command.add_argument("--as-of")
         command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
+    if args.command=='analysis-queue':
+        from .async_cli import command as async_command
+        return async_command(args)
     if args.command=='source-coverage':
         from .coverage import coverage_command
         return coverage_command(args)

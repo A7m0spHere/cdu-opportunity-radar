@@ -62,8 +62,13 @@ class FeaturedPolicy:
             surrounding=contexts(notice,quote)
             if any(re.search(r'并非|不是|不属于|是否|若|如果|[？?]',c) for c in surrounding):continue
             for code,(label,weight,pattern) in CRITERIA.items():
-                if re.search(pattern,quote) and not any(e['criterion']==code for e in evidence):
-                    evidence.append({'criterion':code,'label':label,'quote':external_text(quote)[:240]})
+                public_text=external_text(quote)
+                match=re.search(pattern,public_text)
+                if match and not any(e['criterion']==code for e in evidence):
+                    end=min(len(public_text),max(240,match.end()+60))
+                    excerpt=public_text[max(0,end-240):end]
+                    if locate(notice,excerpt).source in {'title','content'}:
+                        evidence.append({'criterion':code,'label':label,'quote':excerpt})
         qualified=[e for e in evidence if CRITERIA[e['criterion']][1]>=self.settings['rule_threshold']]
         # A model-high student opportunity can qualify at weight 2, provided
         # the public card still states that date/eligibility may be unknown.

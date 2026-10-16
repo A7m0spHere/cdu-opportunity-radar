@@ -78,7 +78,7 @@ Key 仅由 `key_env` 指定的环境变量读取，配置不接受 `api_key`。�
 | outdated | 当前输入相同但 pipeline 版本旧，仅本地历史保留 |
 | lease_expired | 只读状态观察到运行租约已过期，下一次 worker 负责恢复 |
 
-`status` 优先按指定配置计算当前 pipeline，否则使用最近 scan 记录的 active_pipeline；多种配置共享队列时应显式指定配置查看。M6 公共 v2 继续只有规则分类，不连接此私有队列；其 model_state 表示该公开投影未使用模型。后续 #12 需要单独的公开结果契约。
+`status` 优先按指定配置计算当前 pipeline，否则使用最近 scan 记录的 active_pipeline；多种配置共享队列时应显式指定配置查看。M6 公共 v2 继续只有规则分类，不连接此私有队列；其 model_state 表示该公开投影未使用模型。M8 新增独立 [v3 精选投影](STUDENT_PAGE.md)，仅显式配置后只读指定当前分析并复核，公开理由/短引用有嵌套白名单，不公开整个私有结果。
 
 ## 故障和预算
 

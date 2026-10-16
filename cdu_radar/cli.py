@@ -28,6 +28,8 @@ def main(argv=None) -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     from .async_cli import register as register_async_queue
     register_async_queue(sub)
+    from .featured_cli import register as register_featured
+    register_featured(sub)
     listing = sub.add_parser("sources", help="Show catalog and current SQLite state")
     collection = sub.add_parser("collect", help="Collect bounded official pages, no publishing")
     export = sub.add_parser("export-rss", help="Legacy technical diagnostic export; use serve-rss for automatic aggregation")
@@ -110,6 +112,10 @@ def main(argv=None) -> int:
     auto_server.add_argument('--request-budget',type=int,choices=range(6,501),metavar='6..500',default=48,
                              help='Wire requests per round, including robots/redirects/retries; half reserved for originals')
     auto_server.add_argument('--no-env-proxy',action='store_true')
+    auto_server.add_argument('--analysis-state',type=Path,help='Optional private M7 queue; opened read-only, no model requests')
+    auto_server.add_argument('--analysis-config',type=Path,help='Non-secret M7 config for expected version; no Key read')
+    auto_server.add_argument('--featured-model-threshold',choices=['low','normal','high'],default='normal')
+    auto_server.add_argument('--featured-rule-threshold',type=int,choices=range(1,5),default=3)
     lan=sub.add_parser('serve-lan-preview',help='Explicit device-allowlisted read proxy; never changes the loopback RSS listener')
     lan.add_argument('--bind',required=True,help='Specific RFC1918 device IPv4, never 0.0.0.0')
     lan.add_argument('--allow-client',action='append',required=True,help='Specific allowed device IPv4; repeatable, at most 8')
@@ -151,6 +157,9 @@ def main(argv=None) -> int:
         command.add_argument("--as-of")
         command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
+    if args.command=='featured-benchmark':
+        from .featured_cli import command as featured_command
+        return featured_command(args)
     if args.command=='analysis-queue':
         from .async_cli import command as async_command
         return async_command(args)

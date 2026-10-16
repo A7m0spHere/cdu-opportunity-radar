@@ -1,0 +1,12 @@
+{
+  "origin": "synthetic_offline_only",
+  "cases": [
+    {"title":"本科生困难补助申请通知","content":"为保障学生权益，本次困难补助与助学金申请面向在校学生，请查看官方说明。","model_level":"high","truth":true,"criterion":"student_rights","publisher":"computer","published":"2026-10-15"},
+    {"title":"经费报销流程通知","content":"此通知供工作人员办理常规财务报销，按既有流程提交纸质材料。","model_level":"high","truth":false,"criterion":"","publisher":"business","published":"2026-10-15"},
+    {"title":"国家级科研成果正式获批新闻","content":"我校国家级重要科研成果正式获批，这是具有明确来源的历史进展报道。","model_level":"high","truth":true,"criterion":"major_news","publisher":"computer","published":"2024-10-15"},
+    {"title":"人工智能编程竞赛报名","content":"欢迎本科生报名参加本次人工智能编程竞赛，具体资格与时间请核对原文。","model_level":"high","truth":true,"criterion":"participation","publisher":"computer","published":"2026-10-15"},
+    {"title":"普通学院动态新闻","content":"本周学院例行工作交流顺利结束，本文为普通会议动态报道，无新增学生事项。","model_level":"low","truth":false,"criterion":"","publisher":"computer","published":"2026-10-15"},
+    {"title":"重要教学调整通知","content":"本次课程调整影响在校学生，具体安排以教务通知为准，请及时查看。","model_level":"failed","truth":true,"criterion":"academic_affairs","publisher":"computer","published":"2026-10-15"},
+    {"title":"新的助学金通知","content":"为在校学生提供助学金，具体学生权益与申请条件仍需查看原文。","model_level":"queued","truth":true,"criterion":"student_rights","publisher":"computer","published":"2026-10-15"}
+  ]
+}

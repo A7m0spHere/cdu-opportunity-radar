@@ -252,6 +252,9 @@ def make_server(controller, host='127.0.0.1', port=8765):
                         try:snapshot=controller.response_snapshot(snapshot,self.path)
                         except InvalidFilter:
                             self.reply(400,b'Invalid notice filters\n');return
+                        except (ConnectionError,TimeoutError):raise
+                        except ERRORS:
+                            self.reply(503,b'RSS temporarily unavailable\n');return
                         if snapshot.etag and etag_matches(self.headers.get('If-None-Match'),snapshot.etag):self.reply(304,b'',etag=snapshot.etag)
                         else:self.reply(200,snapshot.body,controller.response_content_type(route),snapshot.etag or None)
             except (ConnectionError,TimeoutError):pass

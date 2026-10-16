@@ -43,8 +43,13 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                     if link.canonical_url in seen_articles:
                         counts["duplicates"] += 1
                         continue
-                    if skip_known and store.db.execute('SELECT 1 FROM notices WHERE canonical_url=?', (link.canonical_url,)).fetchone():
-                        continue
+                    if skip_known:
+                        known = store.db.execute('SELECT id FROM notices WHERE canonical_url=?', (link.canonical_url,)).fetchone()
+                        if known:
+                            with store.db:
+                                store.record_discovery(known['id'],source.id,utc_now(),link.published_at)
+                            counts['duplicates'] += 1
+                            continue
                     if len(seen_articles) >= limit:
                         break
                     seen_articles.add(link.canonical_url)

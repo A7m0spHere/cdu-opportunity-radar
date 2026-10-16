@@ -51,9 +51,12 @@ def test_failure_invalidates_without_renewing_success_and_backs_off(store, sourc
     def handler(req):
         if mode=='timeout':
             raise httpx.ReadTimeout('synthetic timeout', request=req)
-        return httpx.Response(410) if mode=='gone' else httpx.Response(200,text='<html>维护中</html>')
+        return httpx.Response(410) if mode=='gone' else httpx.Response(200,text='<html>维护中</html>',headers={'content-type':'text/html'})
     with mock_fetcher(sample, handler=handler) as fetcher:
-        assert recheck(store,fetcher,sources,clock=lambda:at)[0]['result']=='failed'
+        result=recheck(store,fetcher,sources,clock=lambda:at)[0]
+        assert result['result']=='failed'
+        if mode=='maintenance':
+            assert result['error_category'] in {'html_parse','source_maintenance'}
         count=fetcher.request_count
         assert recheck(store,fetcher,sources,clock=lambda:at+timedelta(minutes=30))==[]
         assert fetcher.request_count==count
@@ -231,3 +234,31 @@ def test_budget_cutoff_before_first_article_resumes_that_source(store, sources, 
     with mock_fetcher(sample,handler=handler) as fetcher:
         second=collect_cycle(store,fetcher,sources,limit=1,request_budget=6)
     assert second['discovery'][0]['source']=='computer' and second['discovery'][0]['inserted']==1
+
+
+def test_known_notice_keeps_new_discovery_without_renewing_health(store, sources, sample):
+    add(store)
+    health=tuple(store.db.execute('SELECT * FROM notice_health').fetchone())
+    schedule=queue(store)
+    listing=f'<ul class="jtfylb"><li><a href="{URL}"><p>合成转载</p><span>2026-10-16</span></a></li></ul>'
+    def handler(req):
+        assert '/info/' not in req.url.path, 'Known articles must not be downloaded by discovery'
+        return httpx.Response(200,text=listing,headers={'content-type':'text/html'})
+    with mock_fetcher(sample,handler=handler) as fetcher:
+        result=collect(store,fetcher,[s for s in sources if s.id=='business'],skip_known=True)
+        assert fetcher.request_count==2
+    assert result[0]['duplicates']==1
+    assert {r['source_id'] for r in store.db.execute('SELECT source_id FROM notice_sources')}=={'computer','business'}
+    assert store.db.execute("SELECT published_at FROM notice_sources WHERE source_id='business'").fetchone()[0]=='2026-10-16'
+    assert tuple(store.db.execute('SELECT * FROM notice_health').fetchone())==health
+    assert queue(store)==schedule
+
+
+def test_original_recheck_preserves_discovery_date_and_seen_times(store, sources, sample):
+    add(store)
+    with store.db:
+        store.db.execute("UPDATE notice_sources SET published_at='2026-10-16'")
+    discovery=tuple(store.db.execute('SELECT * FROM notice_sources').fetchone())
+    with mock_fetcher(sample) as fetcher:
+        assert recheck(store,fetcher,sources,clock=lambda:NOW+timedelta(hours=25))
+    assert tuple(store.db.execute('SELECT * FROM notice_sources').fetchone())==discovery

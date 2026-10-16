@@ -11,17 +11,24 @@ from .approved_rss import atomic_write
 from .rss_service import FeedController, Snapshot, ERRORS, LOG, make_server
 from .student_page import assets, public_snapshot, public_snapshot_v2
 from .taxonomy import API_V2, filter_payload
+from .featured_api import API_V3, project, split_query
+from .featured import FeaturedPolicy, decisions
 
 
 class AutoFeedController(FeedController):
-    paths=('/feed.xml','/current.xml','/history.xml','/api/notices',API_V2)
+    paths=('/feed.xml','/current.xml','/history.xml','/api/notices',API_V2,API_V3)
     retired_paths=('/approved.xml',)
     state_kind='m4b-auto-rss-state-v1'
     public_contract='student-notices-v1'
 
-    def __init__(self, db, state_dir, *, data_mode='live', **kwargs):
+    def __init__(self, db, state_dir, *, data_mode='live', analysis_state=None, analysis_analyzer=None, featured_policy=None, **kwargs):
         if data_mode not in {'live','offline_replay'}:raise ValueError('Invalid data mode')
+        if analysis_analyzer and analysis_analyzer.mock and data_mode!='offline_replay':
+            raise ValueError('Mock analysis requires explicit offline replay')
         self.data_mode=data_mode
+        self.analysis_state=analysis_state
+        self.analysis_analyzer=analysis_analyzer
+        self.featured_policy=featured_policy or FeaturedPolicy()
         self.static_assets=assets()
         super().__init__(db,state_dir,**kwargs)
         self.output=self.lease.root/'feed.xml'
@@ -79,9 +86,32 @@ class AutoFeedController(FeedController):
                 return False
 
     def route_path(self,path):
-        return API_V2 if path.startswith(API_V2+'?') else path
+        for route in (API_V2,API_V3):
+            if path.startswith(route+'?'):return route
+        return path
+
+    def featured_payload(self,snapshot,path):
+        # Parse before reading private state, then project only quality-gated IDs.
+        v2_path,_=split_query(path)
+        cohort=filter_payload(snapshot.data_v2,v2_path)['items']
+        from .analysis_store import AnalysisRepository
+        from .storage import Store
+        with self.reader() as raw:
+            ids={r['canonical_url']:r['id'] for r in raw.db.execute('SELECT id,canonical_url FROM notices')}
+            inputs=[{'notice_id':ids[i['source_url']],'guid':i['guid']} for i in cohort]
+            store=Store.__new__(Store);store.db=raw.db
+            repo=AnalysisRepository.__new__(AnalysisRepository);repo.store=store;repo.db=raw.db
+            decided=decisions(repo,inputs,state_db=self.analysis_state,raw_db=self.db,
+                analyzer=self.analysis_analyzer,policy=self.featured_policy,now=self.clock())
+        by_guid={i['guid']:decided[i['notice_id']] for i in inputs}
+        return project(snapshot.data_v2,path,by_guid,self.featured_policy)
 
     def response_snapshot(self, snapshot, path):
+        if self.route_path(path)==API_V3:
+            payload=self.featured_payload(snapshot,path)
+            remaining=max(0,self.max_age-(self.monotonic()-snapshot.validated_at))
+            body=json.dumps(dict(payload,valid_for_ms=int(remaining*1000),poll_after_ms=5000),ensure_ascii=False,separators=(',',':')).encode('utf-8')
+            return Snapshot(body,'',snapshot.plan_hash,snapshot.validated_at)
         if path=='/api/notices' or self.route_path(path)==API_V2:
             remaining=max(0,self.max_age-(self.monotonic()-snapshot.validated_at))
             data=filter_payload(snapshot.data_v2,path) if self.route_path(path)==API_V2 else snapshot.data
@@ -98,7 +128,7 @@ class AutoFeedController(FeedController):
         return Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
 
     def response_content_type(self, path):
-        return 'application/json; charset=utf-8' if path in {'/api/notices',API_V2} else super().response_content_type(path)
+        return 'application/json; charset=utf-8' if path in {'/api/notices',API_V2,API_V3} else super().response_content_type(path)
 
 
 def serve_command(args):
@@ -112,7 +142,15 @@ def serve_command(args):
         if not math.isfinite(args.collect_interval) or args.collect_interval and args.collect_interval<60:
             raise ValueError('Collection interval must be zero or at least 60 seconds')
         if not 0.1<=args.interval<=args.max_age:raise ValueError('Invalid publisher refresh interval')
-        controller=AutoFeedController(args.db,args.state_dir,max_age=args.max_age)
+        analysis_analyzer=None
+        analysis_state=getattr(args,'analysis_state',None);analysis_config=getattr(args,'analysis_config',None)
+        if bool(analysis_state)!=bool(analysis_config):raise ValueError('Supply analysis state and config together')
+        if analysis_config:
+            from .async_cli import configuration
+            analysis_analyzer,_=configuration(analysis_config,False)
+        policy=FeaturedPolicy(model_threshold=getattr(args,'featured_model_threshold','normal'),rule_threshold=getattr(args,'featured_rule_threshold',3))
+        controller=AutoFeedController(args.db,args.state_dir,max_age=args.max_age,analysis_state=analysis_state,
+            analysis_analyzer=analysis_analyzer,featured_policy=policy)
         server=make_server(controller,args.bind,args.port)
         controller.start(args.interval)
         if args.collect_interval:
@@ -142,7 +180,7 @@ def serve_command(args):
                     if stop.wait(args.collect_interval):break
             collector=Thread(target=work,name='official-collector',daemon=True);collector.start()
         print(json.dumps({'rss_path':'/feed.xml','current_path':'/current.xml','history_path':'/history.xml',
-            'page_path':'/','api_path':'/api/notices','api_v2_path':API_V2,'port':server.server_address[1],'local_only':True,'paid_llm_calls':0}),flush=True)
+            'page_path':'/','api_path':'/api/notices','api_v2_path':API_V2,'api_v3_path':API_V3,'port':server.server_address[1],'local_only':True,'paid_llm_calls':0}),flush=True)
         server.serve_forever(poll_interval=0.2)
         return 0
     except KeyboardInterrupt:return 0

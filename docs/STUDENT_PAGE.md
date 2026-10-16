@@ -1,8 +1,18 @@
-# M4-C 学生通知页
+# M8 全部与精选双视图
+
+默认“全部信息”，可切换“重要精选”；原有最新/当前/历史仍独立，精选不等于报名开放。两视图共用相同筛选，精选卡片展开查看入选依据、原文短引用和未知边界，摘要继续是官方原文节选。未分析、依据不足、智能降级、正常空和原始质量 503 分开显示。
+
+页面读取同源 `/api/notices/v3`，`selection=all|featured` 与 v2 所有原筛选轴取交集。v1/v2 原字段和三条旧 Feed 保持。v3 的 `featured` 覆盖按当前筛选命中的全部合格信息计算，然后才取精选子集；`subscription.available=false,url=null`，#13 前不显示复制按钮。页首“全部 RSS 订阅”永远指向真实 `/feed.xml`。
+
+`serve-rss` 默认无模型分析，精选提示尚未就绪而非“没有重要通知”。可显式提供 `--analysis-state <M7私有队列> --analysis-config <非秘密配置>`，只读当前指定 pipeline 并重验已有建议，不读 Key、不调用模型。可选 `--featured-model-threshold` / `--featured-rule-threshold` 改阈值时会更换规则版本；真实效果仍须新人工评测。Mock 结果只能在明确 offline_replay 合成服务中展示。
+
+更多：[规则](FEATURED_POLICY.md) · [标注与评测](FEATURED_LABELING.md) · [本轮边界](M8_RESULTS.md)。下文保留原接口历史说明。
+
+## 历史：M4-C 学生通知页
 
 ## M6 增量：多维筛选
 
-当前页面使用 `/api/notices/v2`，支持发布单位、信息类型、主题、来源日期、报名状态与兼容原分类的交集筛选。旧 `/api/notices` 保持 JSON v1 字段。未分类和模型未处理不会被全量视图删除，来源撤销/过期和数据库故障仍经 RSS 同一门禁，失败隐藏旧列表。规则只是浏览辅助，不作官方事实或开放保证；字段及严格参数见 [TAXONOMY_V1.md](TAXONOMY_V1.md)。界面布局、空/错态及 Chrome 桌面/手机尺寸验证见 [M6_RESULTS.md](M6_RESULTS.md)。下文保留 M4-C 的 v1 历史契约说明。
+M6 阶段页面使用 `/api/notices/v2`，支持发布单位、信息类型、主题、来源日期、报名状态与兼容原分类的交集筛选。旧 `/api/notices` 保持 JSON v1 字段。未分类和模型未处理不会被全量视图删除，来源撤销/过期和数据库故障仍经 RSS 同一门禁，失败隐藏旧列表。规则只是浏览辅助，不作官方事实或开放保证；字段及严格参数见 [TAXONOMY_V1.md](TAXONOMY_V1.md)。界面布局、空/错态及 Chrome 桌面/手机尺寸验证见 [M6_RESULTS.md](M6_RESULTS.md)。下文保留 M4-C 的 v1 历史契约说明。
 
 M4-D 已补充[独立局域网预览方案](LAN_PREVIEW.md)和[真实信息验证](M4D_RESULTS.md)。默认仍是本机环回，跨设备入口须用户显式启用；本轮未开启 LAN 或验证真手机连通。
 

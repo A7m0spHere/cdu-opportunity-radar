@@ -2,18 +2,20 @@
 "use strict";
 const $ = (id) => document.getElementById(id);
 const viewButtons = [...document.querySelectorAll("[data-view]")];
+const selectionButtons = [...document.querySelectorAll("[data-selection]")];
 const statuses = {possible: "可能仍可参与", closed: "报名已截止", unknown: "报名状态未确认"};
 const labels = {all: "最新通知", current: "当前机会", history: "历史信息"};
-let data = null, view = "all", pollTimer, expiryTimer, requestController, generation = 0;
+let data = null, view = "all", selection = "all", pollTimer, expiryTimer, requestController, generation = 0;
 const filterControls = {source: "publisher", type: "information-type", topic: "topic", status: "registration-status", published: "date-presence", from: "date-from", to: "date-to", category: "category"};
 
 function queryPath() {
   const params = new URLSearchParams();
+  if (selection !== "all") params.set("selection", selection);
   for (const [key,id] of Object.entries(filterControls)) {
     const value = $(id).value;
     if (value && value !== "all") params.set(key, value);
   }
-  return "/api/notices/v2" + (params.size ? "?" + params.toString() : "");
+  return "/api/notices/v3" + (params.size ? "?" + params.toString() : "");
 }
 
 function populateFilters(payload) {
@@ -41,11 +43,13 @@ function sourceUrl(value) {
 }
 
 function validate(payload) {
-  if (payload.schema_version !== 2 || payload.taxonomy_version !== 1 || !payload.filter_options ||
+  if (payload.schema_version !== 3 || payload.taxonomy_version !== 1 || !payload.filter_options ||
       !["sources","types","topics"].every((key) => Array.isArray(payload.filter_options[key]) && payload.filter_options[key].every((v) => typeof v.id === "string" && typeof v.label === "string")) ||
       !Array.isArray(payload.items) || !Array.isArray(payload.categories) ||
       !Number.isFinite(payload.valid_for_ms) || payload.valid_for_ms <= 0 || payload.valid_for_ms > 3600000 ||
       !["live", "offline_replay"].includes(payload.data_mode) || !payload.refreshed_at) throw new Error("Invalid response");
+  if (!payload.featured || !["pending","degraded","ready"].includes(payload.featured.state) || !payload.featured.coverage || payload.subscription?.available !== false || payload.subscription.url !== null) throw new Error("Invalid featured response");
+  if (!payload.featured.ranges || !["current","history"].every((key) => payload.featured.ranges[key]?.coverage && ["pending","degraded","ready"].includes(payload.featured.ranges[key].state))) throw new Error("Invalid range state");
   const guids = new Set(), urls = new Set();
   payload.items = payload.items.filter((item) => {
     for (const key of ["guid", "title", "source_name", "source_url", "summary", "source_checked_at", "first_aggregated_at"]) {
@@ -54,6 +58,8 @@ function validate(payload) {
     if (!Object.hasOwn(statuses, item.registration_status) || !["current", "history", "unknown"].includes(item.listing) ||
         !payload.categories.includes(item.category) || (item.source_published_date !== null && !/^20\d{2}-\d{2}-\d{2}$/.test(item.source_published_date))) throw new Error("Invalid state");
     sourceUrl(item.source_url);
+    const f = item.featured;
+    if (!f || !["selected","not_selected","pending"].includes(f.decision) || !Array.isArray(f.evidence) || !Array.isArray(f.uncertainties) || f.evidence.some((e) => typeof e.label !== "string" || typeof e.quote !== "string")) throw new Error("Invalid featured item");
     const c = item.classification;
     if (!c || c.version !== 1 || c.method !== "rules" || c.model_state !== "not_analyzed" ||
         !payload.filter_options.types.some((t) => t.id === c.type) || !Array.isArray(c.topics) ||
@@ -78,6 +84,7 @@ function clearData() {
   data = null;
   $("collected-at").textContent = $("refreshed-at").textContent = "—";
   $("replay-note").hidden = true;
+  $("featured-state").hidden = true;
   document.querySelectorAll("[data-count]").forEach((node) => { node.textContent = "—"; });
   $("source-list").replaceChildren(Object.assign(document.createElement("li"), {textContent: "当前未获取到可核验数据"}));
 }
@@ -119,6 +126,13 @@ function card(item) {
   find(".notice-title").textContent = item.title;
   find(".source-name").textContent = "官方来源 · " + item.source_name;
   find(".summary").textContent = item.summary;
+  if (item.featured.decision === "selected") {
+    find(".featured-reason").hidden = false;
+    find(".featured-basis").textContent = "入选依据：" + item.featured.evidence.map((e) => e.label).join("、");
+    find(".featured-evidence").replaceChildren(...item.featured.evidence.map((e) => Object.assign(document.createElement("li"), {textContent: "原文依据：“" + e.quote + "”"})));
+    const unknowns = {eligibility_unknown: "参与资格待核实", registration_unknown: "报名状态未知", attachments_unread: "附件正文未读取"};
+    find(".featured-boundary").textContent = "重要性是智能建议，经规则复核；摘要为原文节选，不代表官方重要性认定或当前可报名。" + item.featured.uncertainties.map((u) => unknowns[u]).filter(Boolean).join("；");
+  }
   find(".checked-at").textContent = "系统采集 " + formatTime(item.source_checked_at);
   find(".checked-at").title = "最近成功采集：" + item.source_checked_at + "；首次收录：" + item.first_aggregated_at;
   find(".original-link").href = sourceUrl(item.source_url);
@@ -128,12 +142,19 @@ function card(item) {
 }
 
 function render() {
-  $("list-title").textContent = labels[view];
+  $("list-title").textContent = (selection === "featured" ? "重要精选 · " : "") + labels[view];
+  selectionButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.selection === selection)));
   $("view-note").textContent = view === "current" ? "仅列出有明确时间依据的可能参与机会；具体资格仍请核对官方原文。" :
     view === "history" ? "历史报道或明确已截止的信息；报名状态未知的历史通知不会标为已截止。" :
       "原文发布日期优先；日期未提供时，按首次收录时间排序。";
   viewButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.view === view)));
   if (!data) return;
+  const featured = view === "all" ? data.featured : data.featured.ranges[view];
+  $("featured-state").hidden = selection !== "featured";
+  $("featured-state").dataset.state = featured.state;
+  $("featured-state").textContent = featured.state === "degraded" ? "部分智能分析暂不可用。这里只展示当前有依据的精选；全部合格原文仍可在“全部信息”中查看。" :
+    featured.state === "pending" ? "部分信息尚未分析或重要性依据不足，未入选不代表不重要。你可以切换“全部信息”查看完整通知。" :
+      "精选按重要性建议与原文依据入选，与“当前机会”分别判断；个人相关性由下方筛选控制。";
   const count = (scope) => data.items.filter((item) => scope === "all" || item.listing === scope).length;
   document.querySelectorAll("[data-count]").forEach((node) => { node.textContent = count(node.dataset.count); });
   const category = $("category").value;
@@ -142,7 +163,9 @@ function render() {
   $("notice-list").replaceChildren(...items.map(card));
   $("message").hidden = items.length > 0;
   if (!items.length) {
-    if (Object.values(filterControls).some((id) => $(id).value && $(id).value !== "all")) message("empty", "这些条件下暂时没有通知", "可以减少筛选条件，或重置后查看全部合格校园信息。未知状态不代表没有相关信息。");
+    if (selection === "featured" && featured.state === "degraded") message("degraded", "智能精选暂时降级", "当前没有可展示的已核验精选；这不表示没有重要通知。请切换“全部信息”查看官方通知。");
+    else if (selection === "featured" && featured.state === "pending") message("pending", featured.coverage.not_analyzed + featured.coverage.in_progress > 0 ? "精选尚未完成分析" : "精选依据仍待核实", "未分析或依据不足的信息仍保留在“全部信息”，不会被删除。");
+    else if (Object.values(filterControls).some((id) => $(id).value && $(id).value !== "all")) message("empty", "这些条件下暂时没有通知", "可以减少筛选条件，或重置后查看全部合格校园信息。未知状态不代表没有相关信息。");
     else if (view === "current") message("empty", "暂未确认当前可参与的机会", "你仍可在“最新通知”浏览校园信息。报名状态未确认，不代表已经截止。");
     else if (view === "history") message("empty", "暂时没有历史信息", "有符合历史条件的通知后，会在这里显示。");
     else message("empty", "暂时没有可展示的通知", "采集到通过质量检查的官方通知后，会自动出现在这里。");
@@ -196,6 +219,7 @@ async function refresh() {
 }
 
 viewButtons.forEach((button) => button.addEventListener("click", () => { view = button.dataset.view; render(); }));
+selectionButtons.forEach((button) => button.addEventListener("click", () => { selection = button.dataset.selection; revalidate(); render(); refresh(); }));
 Object.entries(filterControls).forEach(([key,id]) => $(id).addEventListener("change", () => {
   if (key === "published" && $(id).value === "unknown") {
     $("date-from").value = $("date-to").value = "";
@@ -206,7 +230,7 @@ Object.entries(filterControls).forEach(([key,id]) => $(id).addEventListener("cha
 $("reset-filters").addEventListener("click", () => {
   for (const [key,id] of Object.entries(filterControls)) $(id).value = ["from","to"].includes(key) ? "" : "all";
   $("date-from").disabled = $("date-to").disabled = false;
-  view = "all"; revalidate(); render(); refresh();
+  view = "all"; selection = "all"; revalidate(); render(); refresh();
 });
 $("refresh").addEventListener("click", refresh);
 window.addEventListener("offline", () => { ++generation; requestController?.abort(); unavailable("网络已断开，通知暂时隐藏。网络恢复后会重新获取。"); });

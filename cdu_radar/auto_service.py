@@ -9,11 +9,12 @@ from xml.etree import ElementTree as ET
 from .auto_publish import AutoRepository, NS, render
 from .approved_rss import atomic_write
 from .rss_service import FeedController, Snapshot, ERRORS, LOG, make_server
-from .student_page import assets, public_snapshot
+from .student_page import assets, public_snapshot, public_snapshot_v2
+from .taxonomy import API_V2, filter_payload
 
 
 class AutoFeedController(FeedController):
-    paths=('/feed.xml','/current.xml','/history.xml','/api/notices')
+    paths=('/feed.xml','/current.xml','/history.xml','/api/notices',API_V2)
     retired_paths=('/approved.xml',)
     state_kind='m4b-auto-rss-state-v1'
     public_contract='student-notices-v1'
@@ -68,7 +69,8 @@ class AutoFeedController(FeedController):
                     live=repo.feed_plan(self.clock());body=render(live['items'])
                     if self.output.read_bytes()!=body:raise ValueError('Source changed during refresh')
                     data=public_snapshot(live['items'],refreshed_at=self.clock().isoformat(),data_mode=self.data_mode)
-                    self.snapshot=Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',live['plan_hash'],self.monotonic(),data)
+                    data_v2=public_snapshot_v2(live['items'],refreshed_at=data['refreshed_at'],data_mode=self.data_mode,filter_options=live['filter_options'])
+                    self.snapshot=Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',live['plan_hash'],self.monotonic(),data,data_v2)
                 self.reason='ready';self.refreshes+=1;return True
             except ERRORS as exc:
                 self.failures+=1
@@ -76,10 +78,14 @@ class AutoFeedController(FeedController):
                 LOG.warning('Automatic RSS unavailable: %s',self.reason)
                 return False
 
+    def route_path(self,path):
+        return API_V2 if path.startswith(API_V2+'?') else path
+
     def response_snapshot(self, snapshot, path):
-        if path=='/api/notices':
+        if path=='/api/notices' or self.route_path(path)==API_V2:
             remaining=max(0,self.max_age-(self.monotonic()-snapshot.validated_at))
-            payload=dict(snapshot.data,valid_for_ms=int(remaining*1000),poll_after_ms=5000)
+            data=filter_payload(snapshot.data_v2,path) if self.route_path(path)==API_V2 else snapshot.data
+            payload=dict(data,valid_for_ms=int(remaining*1000),poll_after_ms=5000)
             body=json.dumps(payload,ensure_ascii=False,separators=(',',':')).encode('utf-8')
             # JSON carries a per-response lifetime, so it never returns 304.
             return Snapshot(body,'',snapshot.plan_hash,snapshot.validated_at)
@@ -92,7 +98,7 @@ class AutoFeedController(FeedController):
         return Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
 
     def response_content_type(self, path):
-        return 'application/json; charset=utf-8' if path=='/api/notices' else super().response_content_type(path)
+        return 'application/json; charset=utf-8' if path in {'/api/notices',API_V2} else super().response_content_type(path)
 
 
 def serve_command(args):
@@ -136,7 +142,7 @@ def serve_command(args):
                     if stop.wait(args.collect_interval):break
             collector=Thread(target=work,name='official-collector',daemon=True);collector.start()
         print(json.dumps({'rss_path':'/feed.xml','current_path':'/current.xml','history_path':'/history.xml',
-            'page_path':'/','api_path':'/api/notices','port':server.server_address[1],'local_only':True,'paid_llm_calls':0}),flush=True)
+            'page_path':'/','api_path':'/api/notices','api_v2_path':API_V2,'port':server.server_address[1],'local_only':True,'paid_llm_calls':0}),flush=True)
         server.serve_forever(poll_interval=0.2)
         return 0
     except KeyboardInterrupt:return 0

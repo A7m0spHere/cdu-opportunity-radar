@@ -118,6 +118,34 @@ def test_proxy_preserves_fail_closed_and_recovers(preview,fault,monkeypatch):
         assert request(server,'/api/notices')[0]==200
 
 
+def test_preview_forwards_v2_filters_to_fixed_loopback(preview):
+    server=preview[3]
+    status,headers,body=request(server,'/api/notices/v2?source=computer&type=competition')
+    payload=json.loads(body)
+    assert status==200 and payload['schema_version']==2 and payload['counts']['all']==1
+    assert payload['items'][0]['publisher_id']=='computer'
+    assert request(server,'/api/notices/v2?source=not-a-publisher')[0]==400
+    assert request(server,'/api/notices/v2?file=../notices.sqlite3')[0]==400
+
+
+@pytest.mark.parametrize('location',['classification','options','top'])
+def test_preview_v2_rejects_private_fields_even_in_nested_metadata(preview,monkeypatch,location):
+    store,controller,upstream,server,point,mono=preview
+    original=controller.response_snapshot
+    def injected(snapshot,path):
+        result=original(snapshot,path)
+        if path.startswith('/api/notices/v2'):
+            data=json.loads(result.body)
+            if location=='classification':data['items'][0]['classification']['content']='PRIVATE-SYNTHETIC-BODY'
+            elif location=='options':data['filter_options']['sources'][0]['db']='PRIVATE-SYNTHETIC-PATH'
+            else:data['db']='PRIVATE-SYNTHETIC-PATH'
+            return replace(result,body=json.dumps(data).encode())
+        return result
+    monkeypatch.setattr(controller,'response_snapshot',injected)
+    status,_,body=request(server,'/api/notices/v2')
+    assert status==503 and b'PRIVATE-SYNTHETIC' not in body
+
+
 def test_upstream_replaced_or_missing_contract_is_not_exposed(loopback_only):
     class PrivateService(BaseHTTPRequestHandler):
         def do_GET(self):

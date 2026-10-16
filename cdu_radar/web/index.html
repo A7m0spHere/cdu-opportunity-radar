@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light">
   <meta name="description" content="浏览来自成都大学官方来源的校园通知，核对报名状态，一键打开官方原文。">
-  <title>校园机会雷达 · 成都大学</title>
+  <title>成都大学校园信息 · 校园机会雷达</title>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/app.css">
   <script src="/app.js" defer></script>
@@ -24,7 +24,7 @@
       <div>
         <p class="eyebrow"><span class="small-line" aria-hidden="true"></span> 成都大学 · 校园信息聚合</p>
         <h1 id="page-title">校园里的<span>新消息</span></h1>
-        <p class="intro-copy">比赛、科研实践与校园活动，放在一处看。<br>保留官方来源，报名是否开放，清楚标明。</p>
+        <p class="intro-copy">通知公告、学院动态与校园活动，放在一处看。<br>按来源和主题自主筛选，保留官方原文与未知状态。</p>
       </div>
       <div class="update-panel">
         <span class="service-state" id="service-state" role="status"><i aria-hidden="true"></i>正在连接信息源</span>
@@ -42,7 +42,20 @@
         <button type="button" data-view="current" aria-pressed="false">当前机会 <span data-count="current">—</span></button>
         <button type="button" data-view="history" aria-pressed="false">历史信息 <span data-count="history">—</span></button>
       </div>
-      <div class="category-control"><label for="category">分类</label>
+      <button id="reset-filters" class="refresh-button" type="button">重置筛选</button>
+    </section>
+    <section class="filter-panel" aria-label="组合筛选">
+      <div class="filter-grid">
+        <div class="filter-control"><label for="publisher">发布单位</label><select id="publisher"><option value="all">全部来源</option></select></div>
+        <div class="filter-control"><label for="information-type">信息类型</label><select id="information-type"><option value="all">全部类型</option></select></div>
+        <div class="filter-control"><label for="topic">主题</label><select id="topic"><option value="all">全部主题</option></select></div>
+      </div>
+      <details class="more-filters"><summary>日期、报名状态与原分类</summary><div class="filter-grid secondary-filters">
+        <div class="filter-control"><label for="registration-status">报名状态</label><select id="registration-status"><option value="all">全部状态</option><option value="possible">可能仍可参与</option><option value="closed">明确已截止</option><option value="unknown">报名未知</option></select></div>
+        <div class="filter-control"><label for="date-presence">来源日期</label><select id="date-presence"><option value="all">全部日期</option><option value="known">有来源日期</option><option value="unknown">日期未知</option></select></div>
+        <div class="filter-control"><label for="date-from">原文发布起日</label><input type="date" id="date-from" min="2000-01-01" max="2099-12-31"></div>
+        <div class="filter-control"><label for="date-to">原文发布止日</label><input type="date" id="date-to" min="2000-01-01" max="2099-12-31"></div>
+        <div class="filter-control"><label for="category">原分类</label>
         <select id="category">
           <option value="all">全部分类</option>
           <option value="学科竞赛">学科竞赛</option>
@@ -51,7 +64,9 @@
           <option value="校园活动">校园活动</option>
           <option value="其他通知">其他通知</option>
         </select>
-      </div>
+        </div>
+      </div></details>
+      <p class="filter-help">条件取交集；日期筛选只使用来源发布日期，不用采集日期补齐。未分类信息仍可在全部信息中查看。</p>
     </section>
     <div class="content-grid">
       <section id="notices" class="notice-section" aria-labelledby="list-title" tabindex="-1">
@@ -78,7 +93,7 @@
     <article class="notice-card">
       <div class="card-date"><span>原文发布</span><time class="date-value"></time></div>
       <div class="card-content">
-        <div class="card-tags"><span class="category-tag"></span><span class="history-tag" hidden>历史信息</span><span class="status-tag"></span></div>
+        <div class="card-tags"><span class="category-tag"></span><span class="type-tag"></span><span class="topic-tags"></span><span class="history-tag" hidden>历史信息</span><span class="status-tag"></span></div>
         <h3 class="notice-title"></h3>
         <p class="source-name"></p>
         <p class="summary"></p>

@@ -23,7 +23,7 @@ def main():
         assert files('cdu_radar').joinpath(name).read_bytes()
     assert load_sources()
     with tempfile.TemporaryDirectory() as directory:
-        for command in ([], ['serve-rss'], ['quality-report']):
+        for command in ([], ['serve-rss'], ['quality-report'], ['source-coverage']):
             result = subprocess.run([sys.executable,'-I','-m','cdu_radar',*command,'--help'],
                                     cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
             assert (command[0] if command else 'serve-rss') in result.stdout
@@ -36,6 +36,9 @@ def main():
         result=subprocess.run([sys.executable,'-I','-m','cdu_radar','quality-report','--db',str(db),'--format','json'],
                               cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
         assert json.loads(result.stdout)['snapshot']['raw_unique_notices']==0 and db.read_bytes()==original
+        result=subprocess.run([sys.executable,'-I','-m','cdu_radar','source-coverage','--format','json'],
+                              cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
+        assert json.loads(result.stdout)['summary']['collection_validated_columns']==11
         executable = Path(sysconfig.get_path('scripts')) / ('cdu-radar.exe' if os.name=='nt' else 'cdu-radar')
         subprocess.run([str(executable),'--help'],cwd=directory,check=True,capture_output=True)
     print('Installed wheel: CLI, catalogs and all web assets passed; no collection or model calls.')

@@ -1,0 +1,26 @@
+[
+  {
+    "file": "xsc_list.html",
+    "official_url": "https://xsc.cdu.edu.cn/index/tzgg.htm",
+    "original_sha256": "28b4c4332adf4453dc818a8ead665032c2035649b436655a3bcaac904d25ebea",
+    "note": "Observed DOM clipped to first three title/date rows; scripts and personal metadata excluded."
+  },
+  {
+    "file": "xsc_article.html",
+    "official_url": "https://xsc.cdu.edu.cn/info/1015/11470.htm",
+    "original_sha256": "b44e4dcc7d3a724acdabd9e98762db85e2b3d0811592f14b2ead4dfbaecceb5e",
+    "note": "Observed heading/date/form/body DOM; short public introduction only. Authors, reviewer names, phone numbers, student lists, scripts and attachment bodies excluded; attachment captions generalized."
+  },
+  {
+    "file": "tuanwei_list.html",
+    "official_url": "https://tuanwei.cdu.edu.cn/index/tzgg.htm",
+    "original_sha256": "bc7b24f2dfb5c84c1274086e12d0b41ff95fa75890288a258cc1dedfc684e321",
+    "note": "Observed DOM clipped to first three title/date rows; scripts and personal metadata excluded."
+  },
+  {
+    "file": "tuanwei_article.html",
+    "official_url": "https://tuanwei.cdu.edu.cn/info/1012/3213.htm",
+    "original_sha256": "ef5b5869b0c190765dbfc9f6613167862c404b5ec831885a9031ecfe4a5c9f39",
+    "note": "Observed heading/date/form/body DOM; short public introduction only. Authors, reviewer names, phone numbers, student lists, scripts and attachment bodies excluded; attachment captions generalized."
+  }
+]

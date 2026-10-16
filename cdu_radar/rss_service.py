@@ -18,6 +18,7 @@ from .analysis_store import AnalysisRepository
 from .approved_rss import atomic_write, export_approved, render
 from .publication import PublicationRepository, table_exists
 from .storage import Store
+from .models import InvalidFilter
 
 LOG=logging.getLogger(__name__)
 ERRORS=(OSError,ValueError,TypeError,KeyError,AttributeError,RecursionError,sqlite3.Error)
@@ -67,6 +68,7 @@ class Snapshot:
     plan_hash: str
     validated_at: float
     data: dict | None = None
+    data_v2: dict | None = None
 
 
 class FeedController:
@@ -76,6 +78,9 @@ class FeedController:
     state_kind = 'm3a-rss-state-v1'
     static_assets = {}
     public_contract = None
+
+    def route_path(self,path):
+        return path
 
     def response_snapshot(self, snapshot, path):
         return snapshot
@@ -230,12 +235,13 @@ def make_server(controller, host='127.0.0.1', port=8765):
             self.send_header('Content-Length',str(len(body)));self.end_headers()
             if self.command!='HEAD' and status!=304:self.wfile.write(body);self.wfile.flush()
         def do_GET(self):
+            route=controller.route_path(self.path)
             if self.path in controller.static_assets:
                 body,content_type=controller.static_assets[self.path]
                 self.reply(200,body,content_type);return
             if self.path in controller.retired_paths:
                 self.reply(410,b'Human-approved feed retired. Subscribe to /feed.xml (automatic aggregation).\n');return
-            if self.path not in {*controller.paths,'/health'}:
+            if route not in {*controller.paths,'/health'}:
                 self.reply(404,b'Not found\n');return
             try:
                 if self.path=='/health':
@@ -243,9 +249,11 @@ def make_server(controller, host='127.0.0.1', port=8765):
                 with controller.read_gate() as snapshot:
                     if snapshot is None:self.reply(503,b'RSS temporarily unavailable\n')
                     else:
-                        snapshot=controller.response_snapshot(snapshot,self.path)
+                        try:snapshot=controller.response_snapshot(snapshot,self.path)
+                        except InvalidFilter:
+                            self.reply(400,b'Invalid notice filters\n');return
                         if snapshot.etag and etag_matches(self.headers.get('If-None-Match'),snapshot.etag):self.reply(304,b'',etag=snapshot.etag)
-                        else:self.reply(200,snapshot.body,controller.response_content_type(self.path),snapshot.etag or None)
+                        else:self.reply(200,snapshot.body,controller.response_content_type(route),snapshot.etag or None)
             except (ConnectionError,TimeoutError):pass
         do_HEAD=do_GET
         def forbidden(self):self.reply(405,b'Read-only endpoint\n')

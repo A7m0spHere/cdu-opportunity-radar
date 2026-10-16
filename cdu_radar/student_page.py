@@ -30,3 +30,13 @@ def public_snapshot(items, *, refreshed_at, data_mode):
     return {'schema_version':1,'items':entries,'categories':list(CATEGORIES),
         'refreshed_at':refreshed_at,'data_mode':data_mode,
         'counts':{'all':len(entries),**{scope:sum(i['listing']==scope for i in entries) for scope in ('current','history','unknown')}}}
+
+
+def public_snapshot_v2(items, *, refreshed_at, data_mode, filter_options):
+    payload=public_snapshot(items,refreshed_at=refreshed_at,data_mode=data_mode)
+    by_guid={i['guid']:i for i in items}
+    for entry in payload['items']:
+        item=by_guid[entry['guid']]
+        entry.update({key:item[key] for key in ('publisher_id','discovery_source_ids','classification')})
+    payload.update(schema_version=2,taxonomy_version=1,filter_options=filter_options)
+    return payload

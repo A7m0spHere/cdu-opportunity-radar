@@ -11,6 +11,10 @@ class RadarError(Exception):
     retryable = False
 
 
+class InvalidFilter(ValueError):
+    """A rejected public filter, never a source/database failure."""
+
+
 class ParseError(RadarError):
     category = "html_parse"
     scope = "parser"

@@ -2,7 +2,7 @@
 
 [![Offline CI](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml/badge.svg)](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml)
 
-面向成都大学学生的校园通知聚合工具。把比赛、科研与创新实践、AI / 计算机相关活动及其他校园信息放在一处浏览，每条通知都能直接打开官方原文。
+面向成都大学学生的公开官方信息聚合工具。把普通通知、学院新闻、学术活动、比赛与科研实践放在一处浏览，按发布单位、类型、主题和日期/报名状态自主筛选，每条信息保留官方原文。长期目标与分批边界见[产品范围](docs/PRODUCT_SCOPE.md)。
 
 **可信来源自动采集 · 网页直接阅读 · RSS 订阅 · 无需逐条人工审批**
 
@@ -12,13 +12,13 @@ Python 3.11+ · [AGPL-3.0-only](LICENSE) · 本地 MVP，有限体验准备阶�
 
 ## 目前能做什么
 
-- **浏览通知**：默认展示最新聚合内容，支持类别、当前机会和历史信息筛选，兼容手机与桌面布局。
+- **浏览通知**：默认展示全部合格信息，支持发布单位、类型、主题标签、来源日期、报名状态与当前/历史范围筛选，兼容手机与桌面布局；普通公告、非 AI 和未分类内容不会被采集层丢弃。
 - **核实来源**：展示官方发布单位、原文链接、有依据的来源日期，以及可追溯的原文节选。
 - **自动更新**：可启用定时采集；按最终原文 URL 去重，内容更新后刷新 RSS 与网页，保持 GUID 和首次聚合发布时间稳定。
 - **保留不确定性**：缺少报名依据时明确显示“报名状态未确认”；当前机会可以为空。
 - **阻止无效内容**：来源未验证、解析异常、原文失效或撤回的信息不作为有效通知发布；服务故障返回 503，网页隐藏旧数据。
 
-当前为本地 MVP 与有限体验准备阶段。离线回归覆盖 **774 项**，分平台通过/跳过及 CI 结果见[验证记录](docs/M5B_RESULTS.md)；M5-B 新增学生处、团委两个栏目，隔离实采新增 **6 篇独立原文、6 篇合格信息、0 篇新增参与候选/明确开放证据**。有界样本不代表全校覆盖率或当前机会总数。
+当前为本地 MVP 与有限体验准备阶段。离线回归覆盖 **807 项**，分平台通过/跳过及 CI 结果见[M6 验证记录](docs/M6_RESULTS.md)；既有 M5-B 试点接入学生处、团委两个栏目，实采新增 **6 篇独立原文、6 篇合格信息、0 篇新增参与候选/明确开放证据**。M6 本轮不扩抓来源；有界样本不代表全校覆盖率或当前机会总数。
 
 ## 快速开始
 
@@ -127,6 +127,7 @@ PR 与 main push 的离线 CI 覆盖 Windows / Ubuntu、Python 3.11 / 3.12，并
 | 局域网预览、手动验证与停止 | [LAN_PREVIEW](docs/LAN_PREVIEW.md) |
 | 最近真实采集和测试证据 | [M4-D 验收](docs/M4D_RESULTS.md) |
 | 只读质量报告与校级来源试点 | [质量报告](docs/QUALITY_REPORT.md) · [M5-B 结果](docs/M5B_RESULTS.md) |
+| 产品覆盖、多维分类与筛选 | [覆盖计划](docs/PRODUCT_SCOPE.md) · [目录盘点](docs/SOURCE_COVERAGE.md) · [v2 契约](docs/TAXONOMY_V1.md) · [M6 验收](docs/M6_RESULTS.md) |
 | 架构、来源目录与开发计划 | [架构](docs/ARCHITECTURE.md) · [来源](docs/SOURCES.md) · [计划](docs/PLAN.md) |
 | 历史分析和发布设计 | [分析契约](docs/ANALYSIS_CONTRACT.md) · [旧审批设计](docs/PUBLICATION.md) · [路线冻结决策](docs/M3B8_ROUTE_DECISION.md) |
 

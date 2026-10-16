@@ -72,7 +72,13 @@
         </div>
       </div></details>
       <p class="filter-help">条件取交集；日期筛选只使用来源发布日期，不用采集日期补齐。未分类信息仍可在全部信息中查看。</p>
-      <p class="subscription-note" id="subscription-note">当前筛选的 RSS 订阅尚未开放。页首 RSS 订阅提供全部合格信息。</p>
+      <div class="subscription-tools">
+        <label for="subscription-url">当前筛选 RSS</label>
+        <input id="subscription-url" type="text" readonly value="" placeholder="核验通知后显示订阅链接">
+        <button id="copy-subscription" type="button" disabled>复制链接</button>
+        <a id="subscription-link" hidden>打开订阅</a>
+      </div>
+      <p class="subscription-note" id="subscription-note" aria-live="polite">订阅最多返回最新 100 条；精选分析尚未就绪时会暂不可用。链接仅在当前服务运行且可访问时有效。</p>
     </section>
     <div class="content-grid">
       <section id="notices" class="notice-section" aria-labelledby="list-title" tabindex="-1">

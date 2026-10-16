@@ -2,7 +2,7 @@
 
 默认“全部信息”，可切换“重要精选”；原有最新/当前/历史仍独立，精选不等于报名开放。两视图共用相同筛选，精选卡片展开查看入选依据、原文短引用和未知边界，摘要继续是官方原文节选。未分析、依据不足、智能降级、正常空和原始质量 503 分开显示。
 
-页面读取同源 `/api/notices/v3`，`selection=all|featured` 与 v2 所有原筛选轴取交集。v1/v2 原字段和三条旧 Feed 保持。v3 的 `featured` 覆盖按当前筛选命中的全部合格信息计算，然后才取精选子集；`subscription.available=false,url=null`，#13 前不显示复制按钮。页首“全部 RSS 订阅”永远指向真实 `/feed.xml`。
+页面读取同源 `/api/notices/v3`，`selection=all|featured` 与 v2 所有原筛选轴取交集。v1/v2 原字段和三条旧 Feed 保持。v3 的 `featured` 覆盖按当前筛选命中的全部合格信息计算，然后才取精选子集；#13 已接入 `subscription.available=true` 及当前筛选的规范相对 URL，页面提供链接、复制与手动选择。当前/历史切换也同步到订阅条件；加载/原文故障时清空旧链接。精选尚未就绪时 RSS 返回 503，路径可复制不代表分析已就绪。页首“全部 RSS 订阅”仍指向 `/feed.xml`。[RSS v1 契约](RSS_V1.md)。
 
 `serve-rss` 默认无模型分析，精选提示尚未就绪而非“没有重要通知”。可显式提供 `--analysis-state <M7私有队列> --analysis-config <非秘密配置>`，只读当前指定 pipeline 并重验已有建议，不读 Key、不调用模型。可选 `--featured-model-threshold` / `--featured-rule-threshold` 改阈值时会更换规则版本；真实效果仍须新人工评测。Mock 结果只能在明确 offline_replay 合成服务中展示。
 

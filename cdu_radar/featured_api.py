@@ -4,6 +4,7 @@ from urllib.parse import urlencode
 from .featured import ANALYSIS_STATES, CRITERIA, REASON_LABELS, overview
 from .models import InvalidFilter
 from .taxonomy import API_V2, FILTER_KEYS, V2_TOP_FIELDS, V2_ITEM_FIELDS, filter_payload, validate_public_v2
+from .rss_v1 import canonical_path
 
 API_V3='/api/notices/v3'
 
@@ -36,7 +37,7 @@ def project(payload, path, by_guid, policy):
     return dict(filtered,schema_version=3,items=entries,featured=state,
         applied_filters=dict(filtered['applied_filters'],selection=selection),
         counts={'all':len(entries),**{scope:sum(i['listing']==scope for i in entries) for scope in ['current','history','unknown']}},
-        subscription={'available':False,'url':None,'reason':'filtered_rss_not_implemented'})
+        subscription={'available':True,'url':canonical_path(selection,filtered['applied_filters']),'reason':None})
 
 
 def validate_public_v3(payload):
@@ -72,7 +73,8 @@ def validate_public_v3(payload):
     for stats in [dict(state=f['state'],coverage=f['coverage']),*f['ranges'].values()]:validate_stats(stats)
     if not isinstance(f['policy_version'],str) or not re.fullmatch(r'featured-v1:[a-f0-9]{24}',f['policy_version']):raise ValueError('Invalid overview version')
     if any(i['featured']['policy_version']!=f['policy_version'] for i in payload['items']):raise ValueError('Inconsistent featured policy')
-    if payload['subscription']!={'available':False,'url':None,'reason':'filtered_rss_not_implemented'}:
+    expected={'available':True,'url':canonical_path(payload['applied_filters']['selection'],payload['applied_filters']),'reason':None}
+    if payload['subscription']!=expected:
         raise ValueError('Unsupported filtered subscription')
 
 

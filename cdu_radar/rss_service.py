@@ -85,6 +85,13 @@ class FeedController:
     def response_snapshot(self, snapshot, path):
         return snapshot
 
+    @contextmanager
+    def response_gate(self, snapshot, path):
+        yield self.response_snapshot(snapshot, path)
+
+    def allow_request(self, path, peer):
+        return True
+
     def response_content_type(self, path):
         return 'application/rss+xml; charset=utf-8'
     def __init__(self, db, state_dir, *, max_age=30, clock=reference_datetime, monotonic=time.monotonic):
@@ -231,6 +238,7 @@ def make_server(controller, host='127.0.0.1', port=8765):
             self.send_header('Content-Security-Policy',"default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
             if etag:self.send_header('ETag',etag)
             if status==503:self.send_header('Retry-After','1')
+            if status==429:self.send_header('Retry-After','1')
             if status==405:self.send_header('Allow','GET, HEAD')
             self.send_header('Content-Length',str(len(body)));self.end_headers()
             if self.command!='HEAD' and status!=304:self.wfile.write(body);self.wfile.flush()
@@ -243,20 +251,23 @@ def make_server(controller, host='127.0.0.1', port=8765):
                 self.reply(410,b'Human-approved feed retired. Subscribe to /feed.xml (automatic aggregation).\n');return
             if route not in {*controller.paths,'/health'}:
                 self.reply(404,b'Not found\n');return
+            if not controller.allow_request(self.path,self.client_address[0]):
+                self.reply(429,b'Request budget exceeded\n');return
             try:
                 if self.path=='/health':
                     state=controller.health();self.reply(200 if state['ready'] else 503,json.dumps(state).encode(),'application/json');return
                 with controller.read_gate() as snapshot:
                     if snapshot is None:self.reply(503,b'RSS temporarily unavailable\n')
                     else:
-                        try:snapshot=controller.response_snapshot(snapshot,self.path)
+                        try:
+                            with controller.response_gate(snapshot,self.path) as response:
+                                if response.etag and etag_matches(self.headers.get('If-None-Match'),response.etag):self.reply(304,b'',etag=response.etag)
+                                else:self.reply(200,response.body,controller.response_content_type(route),response.etag or None)
                         except InvalidFilter:
                             self.reply(400,b'Invalid notice filters\n');return
                         except (ConnectionError,TimeoutError):raise
                         except ERRORS:
                             self.reply(503,b'RSS temporarily unavailable\n');return
-                        if snapshot.etag and etag_matches(self.headers.get('If-None-Match'),snapshot.etag):self.reply(304,b'',etag=snapshot.etag)
-                        else:self.reply(200,snapshot.body,controller.response_content_type(route),snapshot.etag or None)
             except (ConnectionError,TimeoutError):pass
         do_HEAD=do_GET
         def forbidden(self):self.reply(405,b'Read-only endpoint\n')
@@ -264,6 +275,30 @@ def make_server(controller, host='127.0.0.1', port=8765):
     class Server(ThreadingHTTPServer):
         daemon_threads=True
         address_family=socket.AF_INET6 if ipaddress.ip_address(host).version==6 else socket.AF_INET
+        request_queue_size=8
+
+        def __init__(self,*args,**kwargs):
+            self.slots=threading.BoundedSemaphore(8)
+            super().__init__(*args,**kwargs)
+
+        def process_request(self,request,address):
+            if not self.slots.acquire(blocking=False):
+                try:
+                    request.settimeout(0.1)
+                    # Drain an ordinary reader's small request before closing;
+                    # unread TCP data can otherwise reset away the 503 on Windows.
+                    request.recv(8192)
+                    request.sendall(b'HTTP/1.0 503 Service Unavailable\r\nContent-Length: 0\r\nRetry-After: 1\r\nCache-Control: no-store, max-age=0\r\n\r\n')
+                except OSError:pass
+                finally:self.shutdown_request(request)
+                return
+            try:super().process_request(request,address)
+            except BaseException:
+                self.slots.release();raise
+
+        def process_request_thread(self,request,address):
+            try:super().process_request_thread(request,address)
+            finally:self.slots.release()
     return Server((host,port),Handler)
 
 

@@ -95,7 +95,7 @@ def test_v3_all_featured_shared_filters_history_and_no_original_loss(auto_servic
     assert v3(server,'?selection=featured&type=competition&status=possible')[2]['counts']['all']==0
     assert {i['guid'] for i in all_items['items']}=={i['guid'] for i in v2['items']}
     assert request(server,'/feed.xml')[2]==old
-    assert all_items['subscription']=={'available':False,'url':None,'reason':'filtered_rss_not_implemented'}
+    assert all_items['subscription']=={'available':True,'url':'/rss/v1/all.xml','reason':None}
     assert request(server,API_V3,headers={'If-None-Match':'*'})[0]==200
 
 

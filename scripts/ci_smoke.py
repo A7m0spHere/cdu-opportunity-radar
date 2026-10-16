@@ -84,6 +84,15 @@ def main():
                 assert response.status==200 and payload['featured']['state']=='pending'
                 validate_public_v3(payload)
             finally:connection.close()
+            from xml.etree import ElementTree as ET
+            for path,expected in [('/rss/v1/all.xml',200),('/rss/v1/featured.xml',503),('/rss/v1/all.xml?source=invalid',400)]:
+                connection=http.client.HTTPConnection('127.0.0.1',server.server_address[1],timeout=5)
+                try:
+                    connection.request('GET',path)
+                    response=connection.getresponse();body=response.read()
+                    assert response.status==expected and response.getheader('Cache-Control')=='no-store, max-age=0'
+                    if expected==200:assert ET.fromstring(body).tag=='rss'
+                finally:connection.close()
         finally:
             if worker.is_alive():server.shutdown();worker.join(3)
             server.server_close();controller.close()

@@ -7,6 +7,7 @@ const statuses = {possible: "可能仍可参与", closed: "报名已截止", unk
 const labels = {all: "最新通知", current: "当前机会", history: "历史信息"};
 let data = null, view = "all", selection = "all", pollTimer, expiryTimer, requestController, generation = 0;
 const filterControls = {source: "publisher", type: "information-type", topic: "topic", status: "registration-status", published: "date-presence", from: "date-from", to: "date-to", category: "category"};
+const subscriptionHelp = "订阅最多返回最新 100 条；精选分析尚未就绪时会暂不可用。链接仅在当前服务运行且可访问时有效。";
 
 function queryPath() {
   const params = new URLSearchParams();
@@ -48,7 +49,9 @@ function validate(payload) {
       !Array.isArray(payload.items) || !Array.isArray(payload.categories) ||
       !Number.isFinite(payload.valid_for_ms) || payload.valid_for_ms <= 0 || payload.valid_for_ms > 3600000 ||
       !["live", "offline_replay"].includes(payload.data_mode) || !payload.refreshed_at) throw new Error("Invalid response");
-  if (!payload.featured || !["pending","degraded","ready"].includes(payload.featured.state) || !payload.featured.coverage || payload.subscription?.available !== false || payload.subscription.url !== null) throw new Error("Invalid featured response");
+  if (!payload.featured || !["pending","degraded","ready"].includes(payload.featured.state) || !payload.featured.coverage || payload.subscription?.available !== true || typeof payload.subscription.url !== "string" || !/^\/rss\/v1\/(all|featured)\.xml(\?|$)/.test(payload.subscription.url)) throw new Error("Invalid featured response");
+  const subscription = new URL(payload.subscription.url, location.origin);
+  if (subscription.origin !== location.origin || subscription.hash || !["/rss/v1/all.xml", "/rss/v1/featured.xml"].includes(subscription.pathname)) throw new Error("Invalid subscription");
   if (!payload.featured.ranges || !["current","history"].every((key) => payload.featured.ranges[key]?.coverage && ["pending","degraded","ready"].includes(payload.featured.ranges[key].state))) throw new Error("Invalid range state");
   const guids = new Set(), urls = new Set();
   payload.items = payload.items.filter((item) => {
@@ -82,6 +85,11 @@ function message(kind, title, copy) {
 function clearData() {
   clearTimeout(expiryTimer);
   data = null;
+  $("subscription-url").value = "";
+  $("copy-subscription").disabled = true;
+  $("subscription-link").hidden = true;
+  $("subscription-link").removeAttribute("href");
+  $("subscription-note").textContent = subscriptionHelp;
   $("collected-at").textContent = $("refreshed-at").textContent = "—";
   $("replay-note").hidden = true;
   $("featured-state").hidden = true;
@@ -149,6 +157,13 @@ function render() {
       "原文发布日期优先；日期未提供时，按首次收录时间排序。";
   viewButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.view === view)));
   if (!data) return;
+  const subscription = new URL(data.subscription.url, location.origin);
+  if (view !== "all") subscription.searchParams.set("view", view);
+  if ($("subscription-url").value !== subscription.href) $("subscription-note").textContent = subscriptionHelp;
+  $("subscription-url").value = subscription.href;
+  $("subscription-link").href = subscription.href;
+  $("subscription-link").hidden = false;
+  $("copy-subscription").disabled = false;
   const featured = view === "all" ? data.featured : data.featured.ranges[view];
   $("featured-state").hidden = selection !== "featured";
   $("featured-state").dataset.state = featured.state;
@@ -233,6 +248,20 @@ $("reset-filters").addEventListener("click", () => {
   view = "all"; selection = "all"; revalidate(); render(); refresh();
 });
 $("refresh").addEventListener("click", refresh);
+$("copy-subscription").addEventListener("click", async () => {
+  const input = $("subscription-url");
+  const value = input.value;
+  if (!data || !value) return;
+  try {
+    await navigator.clipboard.writeText(value);
+    if (data && input.value === value) $("subscription-note").textContent = "已复制当前筛选的订阅链接。链接仅在当前服务运行且可访问时有效。";
+  } catch {
+    if (data && input.value === value) {
+      input.focus(); input.select();
+      $("subscription-note").textContent = "请复制已选中的链接，再添加到 RSS 阅读器。链接仅在当前服务运行且可访问时有效。";
+    }
+  }
+});
 window.addEventListener("offline", () => { ++generation; requestController?.abort(); unavailable("网络已断开，通知暂时隐藏。网络恢复后会重新获取。"); });
 window.addEventListener("online", refresh);
 document.addEventListener("visibilitychange", () => {

@@ -13,10 +13,11 @@ from .student_page import assets, public_snapshot, public_snapshot_v2
 from .taxonomy import API_V2, filter_payload
 from .featured_api import API_V3, project, split_query
 from .featured import FeaturedPolicy, decisions
+from . import rss_v1, subscription_store
 
 
 class AutoFeedController(FeedController):
-    paths=('/feed.xml','/current.xml','/history.xml','/api/notices',API_V2,API_V3)
+    paths=('/feed.xml','/current.xml','/history.xml','/api/notices',API_V2,API_V3,*rss_v1.ROUTES)
     retired_paths=('/approved.xml',)
     state_kind='m4b-auto-rss-state-v1'
     public_contract='student-notices-v1'
@@ -31,6 +32,9 @@ class AutoFeedController(FeedController):
         self.featured_policy=featured_policy or FeaturedPolicy()
         self.static_assets=assets()
         super().__init__(db,state_dir,**kwargs)
+        self.subscription_path=self.lease.root/'subscriptions.sqlite3'
+        self.subscription_ready=False
+        self.subscription_budget=rss_v1.RequestBudget(self.monotonic)
         self.output=self.lease.root/'feed.xml'
         if self.output.is_symlink():
             self.lease.close()
@@ -78,6 +82,16 @@ class AutoFeedController(FeedController):
                     data=public_snapshot(live['items'],refreshed_at=self.clock().isoformat(),data_mode=self.data_mode)
                     data_v2=public_snapshot_v2(live['items'],refreshed_at=data['refreshed_at'],data_mode=self.data_mode,filter_options=live['filter_options'])
                     self.snapshot=Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',live['plan_hash'],self.monotonic(),data,data_v2)
+                # Optional analysis/storage faults must not take down all-original RSS.
+                self.subscription_ready=False
+                if self.analysis_state is not None and self.analysis_analyzer is not None:
+                    try:
+                        with self.selection_gate(self.snapshot) as (token,selected):
+                            with subscription_store.connection(self.subscription_path,self.db,write=True) as state:
+                                subscription_store.persist(state,token,selected,self.clock())
+                        self.subscription_ready=True
+                    except ERRORS:
+                        LOG.warning('Featured subscription unavailable')
                 self.reason='ready';self.refreshes+=1;return True
             except ERRORS as exc:
                 self.failures+=1
@@ -86,9 +100,72 @@ class AutoFeedController(FeedController):
                 return False
 
     def route_path(self,path):
+        if rss_v1.route_path(path) in rss_v1.ROUTES:
+            return rss_v1.route_path(path)
         for route in (API_V2,API_V3):
             if path.startswith(route+'?'):return route
         return path
+
+    def allow_request(self,path,peer):
+        return self.route_path(path) not in rss_v1.ROUTES or self.subscription_budget.allow()
+
+    @contextmanager
+    def selection_gate(self,snapshot):
+        """Hold raw and private queue rollback snapshots through persistence/response."""
+        from .analysis_models import fingerprint
+        from .analysis_store import AnalysisRepository
+        from .storage import Store
+        from .featured import analysis_reader, analysis_for
+        if self.analysis_state is None or self.analysis_analyzer is None:
+            raise ValueError('Featured analysis not configured')
+        if self.analysis_analyzer.mock and self.data_mode!='offline_replay':
+            raise ValueError('Mock analysis requires offline replay')
+        with self.reader() as raw:
+            plan=raw.feed_plan(self.clock())
+            if plan['plan_hash']!=snapshot.plan_hash:
+                raise ValueError('Source changed during selection')
+            store=Store.__new__(Store);store.db=raw.db
+            repo=AnalysisRepository.__new__(AnalysisRepository);repo.store=store;repo.db=raw.db
+            with analysis_reader(self.analysis_state,self.db) as queue:
+                if queue.db.execute('PRAGMA journal_mode').fetchone()[0].lower() not in {'delete','truncate','persist'}:
+                    raise ValueError('Analysis rollback journaling required for subscriptions')
+                selected={};signatures=[]
+                for item in plan['items']:
+                    ident=item['notice_id']
+                    notice,analysis,state=analysis_for(queue,repo,self.analysis_analyzer,ident,self.clock())
+                    selected[item['guid']]=self.featured_policy.decide(notice,analysis,state)
+                    # Reanalysis and pipeline/lease changes invalidate persisted collections,
+                    # even when their public decision happens to be unchanged.
+                    signatures.extend(tuple(r) for r in queue.db.execute(
+                        'SELECT id,input_hash,pipeline_version,state,mode,result,lease_until,updated_at FROM jobs WHERE notice_id=? ORDER BY id',(ident,)))
+                token=fingerprint([snapshot.plan_hash,self.data_mode,self.analysis_analyzer.version,
+                    self.featured_policy.version,signatures,selected])
+                yield token,selected
+
+    @contextmanager
+    def response_gate(self,snapshot,path):
+        route=self.route_path(path)
+        if route not in rss_v1.ROUTES:
+            yield self.response_snapshot(snapshot,path)
+            return
+        # Validate all parameters before opening the optional analysis sidecar.
+        rss_v1.filtered(snapshot.data_v2,path)
+        if route==rss_v1.ROUTES[0]:
+            body=rss_v1.render(snapshot.data_v2,path)
+            yield Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
+            return
+        try:
+            if not self.subscription_ready:
+                raise ValueError('Featured subscription not initialized')
+            with self.selection_gate(snapshot) as (token,selected):
+                with subscription_store.connection(self.subscription_path,self.db) as state:
+                    first=subscription_store.read(state,token,selected,self.clock())
+                    body=rss_v1.render(snapshot.data_v2,path,collection=selected,first_featured=first)
+                    yield Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
+        except (ConnectionError,TimeoutError):raise
+        except ERRORS:
+            self.wakeup.set()
+            raise
 
     def featured_payload(self,snapshot,path):
         # Parse before reading private state, then project only quality-gated IDs.
@@ -180,6 +257,7 @@ def serve_command(args):
                     if stop.wait(args.collect_interval):break
             collector=Thread(target=work,name='official-collector',daemon=True);collector.start()
         print(json.dumps({'rss_path':'/feed.xml','current_path':'/current.xml','history_path':'/history.xml',
+            'rss_v1_all_path':rss_v1.ROUTES[0],'rss_v1_featured_path':rss_v1.ROUTES[1],
             'page_path':'/','api_path':'/api/notices','api_v2_path':API_V2,'api_v3_path':API_V3,'port':server.server_address[1],'local_only':True,'paid_llm_calls':0}),flush=True)
         server.serve_forever(poll_interval=0.2)
         return 0

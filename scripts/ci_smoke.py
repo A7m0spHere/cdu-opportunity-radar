@@ -12,6 +12,7 @@ import cdu_radar
 from cdu_radar.sources import load_sources
 from cdu_radar.student_page import assets
 from cdu_radar.storage import Store
+from cdu_radar.models import Article
 
 
 def main():
@@ -23,7 +24,7 @@ def main():
         assert files('cdu_radar').joinpath(name).read_bytes()
     assert load_sources()
     with tempfile.TemporaryDirectory() as directory:
-        for command in ([], ['serve-rss'], ['quality-report'], ['source-coverage']):
+        for command in ([], ['serve-rss'], ['quality-report'], ['source-coverage'], ['analysis-queue']):
             result = subprocess.run([sys.executable,'-I','-m','cdu_radar',*command,'--help'],
                                     cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
             assert (command[0] if command else 'serve-rss') in result.stdout
@@ -39,6 +40,23 @@ def main():
         result=subprocess.run([sys.executable,'-I','-m','cdu_radar','source-coverage','--format','json'],
                               cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
         assert json.loads(result.stdout)['summary']['collection_validated_columns']==11
+        mock_db=Path(directory)/'synthetic.sqlite3'
+        with Store(mock_db) as store:
+            store.sync_sources(load_sources())
+            store.save_notice('computer','https://computer.cdu.edu.cn/info/1/999999.htm',
+                Article('合成课程调整通知','2026-10-16','这是合成的课程时间调整通知，请查看安排。'))
+        mock_original=mock_db.read_bytes()
+        state=Path(directory)/'m7-jobs.sqlite3'
+        result=subprocess.run([sys.executable,'-I','-m','cdu_radar','analysis-queue','work',
+            '--db',str(mock_db),'--state-db',str(state),'--mock'],cwd=directory,check=True,
+            capture_output=True,text=True,encoding='utf-8')
+        assert json.loads(result.stdout)['handled'][0]['state']=='succeeded' and mock_db.read_bytes()==mock_original
+        for action in ['status','ledger']:
+            before=state.read_bytes()
+            result=subprocess.run([sys.executable,'-I','-m','cdu_radar','analysis-queue',action,
+                '--db',str(mock_db),'--state-db',str(state)],cwd=directory,check=True,
+                capture_output=True,text=True,encoding='utf-8')
+            assert json.loads(result.stdout)['schema_version']==1 and state.read_bytes()==before
         executable = Path(sysconfig.get_path('scripts')) / ('cdu-radar.exe' if os.name=='nt' else 'cdu-radar')
         subprocess.run([str(executable),'--help'],cwd=directory,check=True,capture_output=True)
     print('Installed wheel: CLI, catalogs and all web assets passed; no collection or model calls.')

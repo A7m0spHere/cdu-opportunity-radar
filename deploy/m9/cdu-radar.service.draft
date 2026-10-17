@@ -1,0 +1,26 @@
+# Design artifact, not installed/enabled. Native Linux acceptance is still open.
+[Unit]
+Description=CDU radar loopback application (nonproduction draft)
+After=network.target
+ConditionPathExists=/etc/cdu-radar/ALLOW_NONPRODUCTION_RUN
+
+[Service]
+Type=simple
+User=cdu-radar
+Group=cdu-radar
+WorkingDirectory=/opt/cdu-radar/current
+ExecStart=/opt/cdu-radar/current/venv/bin/python -m cdu_radar serve-rss --db /srv/cdu-radar/private/live/raw.sqlite3 --state-dir /srv/cdu-radar/private/live/http-state --bind 127.0.0.1 --port 8765 --collect-interval 0 --interval 10 --max-age 30
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/srv/cdu-radar/private/live
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=768M
+CPUQuota=100%
+TasksMax=32
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+KillMode=control-group

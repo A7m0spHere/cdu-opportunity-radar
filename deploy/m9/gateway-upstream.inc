@@ -1,0 +1,23 @@
+# Only one fixed local application. Original query is validated by the app.
+proxy_pass http://127.0.0.1:8765;
+proxy_http_version 1.1;
+proxy_set_header Connection "";
+proxy_pass_request_headers off;
+proxy_pass_request_body off;
+proxy_set_header Host 127.0.0.1:8765;
+proxy_set_header Content-Length "";
+proxy_set_header If-None-Match $http_if_none_match;
+proxy_cache off;
+proxy_cache_use_stale off;
+proxy_buffering off;
+proxy_request_buffering off;
+proxy_max_temp_file_size 0;
+proxy_intercept_errors off;
+proxy_next_upstream off;
+proxy_connect_timeout 1s;
+proxy_send_timeout 5s;
+proxy_read_timeout 6s;
+proxy_hide_header Cache-Control;
+proxy_hide_header Retry-After;
+proxy_hide_header Allow;
+proxy_hide_header Set-Cookie;

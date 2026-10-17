@@ -1,5 +1,7 @@
 # M4-D 独立局域网预览方案
 
+> 当前范围：用户已暂缓手机/LAN 访问，不再作为 #6/#14 的本轮交付门槛。以下方案保留为历史/未来显式启用参考，本次未开启 LAN。桌面/Linux 与部署准备完成情况见 [M9 完成记录](M9_COMPLETION_RESULTS.md)。
+
 2026-10-17 更新：电脑端安装包、环回代理与故障/桌面走查通过，见 [M5-C 电脑端验收](M5C_DESKTOP_RESULTS.md)。后续按授权使用现有服务器完成 Linux 原生、独立 Nginx/TLS 与 Windows 经 SSH 的 RSS 增量，见 [服务器验收](M9_SERVER_RESULTS.md)。真实手机/同 Wi-Fi LAN 与使用者反馈仍待完成。下文保留 LAN 启动条件及历史验证边界。
 
 M6 兼容更新：代理新增固定环回 `/api/notices/v2` 及其严格筛选参数，校验新增公开字段及嵌套元数据白名单。原 `/api/notices` v1 规则不变；未获许可仍不打开 LAN 监听。仅环回代理回归通过，不代表真实手机或 Linux 原生验收。见 [v2 契约](TAXONOMY_V1.md)。

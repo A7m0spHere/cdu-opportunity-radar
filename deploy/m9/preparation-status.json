@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "kind": "preparation_acceptance_record_not_runtime_config",
+  "as_of": "2026-10-17",
+  "preparation_complete": true,
+  "public_launch_ready": false,
+  "production_authorized": false,
+  "mobile_lan_scope": "deferred_by_user",
+  "mobile_lan_passed": false,
+  "field_participant_feedback": "deferred_with_mobile_trial",
+  "desktop_acceptance": "passed",
+  "linux_native_acceptance": "passed",
+  "nginx_tls_isolated_acceptance": "passed",
+  "rss_incremental_cross_host": "passed",
+  "backup_restore": "passed",
+  "wheel_upgrade_rollback": "passed",
+  "ci": {
+    "commit": "061d7ede8d0d78c388b9654729a63c1d89b06af5",
+    "conclusion": "success",
+    "url": "https://github.com/A7m0spHere/cdu-opportunity-radar/actions/runs/39035853752",
+    "covers_completion_changes": false
+  },
+  "server_region": {
+    "value": "cn-shanghai",
+    "evidence": "user-provided local server record; not cloud-console verification"
+  },
+  "domain": null,
+  "registration_status": "not_verified_for_cdu_service",
+  "source_redistribution": "not_approved",
+  "public_summary_review": "not_approved",
+  "public_notice_ui": "implemented_and_desktop_checked",
+  "public_listener_enabled": false,
+  "collection_enabled": false,
+  "llm_enabled": false,
+  "paid_model_budget": 0,
+  "checks": {
+    "linux_pytest": 979,
+    "native_gateway": 49,
+    "release_switch": 37,
+    "current_student_page_tests": 52
+  },
+  "baseline_wheel_sha256": "d262b6b42dd7fe4a965043a1621e570d3e076daead0710db115230f6dc175998",
+  "candidate_wheel_sha256": "1467c1113cfe5daf40d30af892bd6497806595098c39c4540d624968c1f06216",
+  "release_evidence_sha256": "eced7e3f63d1ecb38278ed5aec86a0a235131ac445874d46cc126ff6f46b9cba",
+  "reports": [
+    "docs/M9_SERVER_RESULTS.md",
+    "docs/M9_COMPLETION_RESULTS.md",
+    "docs/M9_SOURCE_REVIEW.md",
+    "docs/M9_OPERATIONS.md"
+  ]
+}

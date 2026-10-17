@@ -22,7 +22,7 @@ Python 3.11+ · [AGPL-3.0-only](LICENSE) · 本地 MVP，有限体验准备阶�
 
 ## 快速开始
 
-需要 **Python 3.11+** 和 Git。Windows 实际验证环境为 Python 3.12.10；Linux 命令已提供，原生运行仍待验证。
+需要 **Python 3.11+** 和 Git。Windows 实际验证环境为 Python 3.12.10；Ubuntu 22.04 / Python 3.12.15 已完成隔离安装与原生测试，见 [服务器验收](docs/M9_SERVER_RESULTS.md)。Linux 系统 Python 若低于 3.11，须使用独立的兼容解释器。
 
 ```sh
 git clone https://github.com/A7m0spHere/cdu-opportunity-radar.git
@@ -99,7 +99,7 @@ python3 -m venv .venv
 - **有效性**：最近成功原文检查超过 72 小时的通知停止公开，等待重新采集。数据库中的历史记录保留；历史列表也受有效性检查约束。
 - **内容理解**：摘要为原文节选，日期与资格采用保守规则。附件仅记录名称和链接，尚未读取其正文；多赛道或不明确的条件保持未知。
 - **访问方式**：核心服务只监听环回地址，`127.0.0.1` 仅供服务所在设备访问。另有须显式启用、按具体设备 IP 限制的[局域网预览方案](docs/LAN_PREVIEW.md)。
-- **验证范围**：Windows 本机、手机尺寸视口和故障隐藏已验证；真实手机跨设备、Linux 原生及长期无人值守运行尚未验收。目前没有生产部署或公网体验站。
+- **验证范围**：Windows 本机、手机尺寸视口、Linux 原生与隔离 Nginx/TLS 已验证，Windows 经 SSH 跨机 RSS 增量通过；真实手机/同 Wi-Fi LAN、用户反馈及长期无人值守运行尚未验收。目前没有生产部署或公网体验站。
 
 使用本地 SQLite 回滚日志模式，服务拒绝 WAL；数据库与服务状态目录分开放置。不要把仓库、数据库或日志目录作为静态网站公开。正文链接由浏览器直接访问官方网页，本服务不自动报名、登录或收集学生个人资料。
 
@@ -129,6 +129,7 @@ PR 与 main push 的离线 CI 覆盖 Windows / Ubuntu、Python 3.11 / 3.12，并
 | 学生页运行、JSON 契约与离线预览 | [STUDENT_PAGE](docs/STUDENT_PAGE.md) |
 | 自动发布、来源与时间状态 | [AUTO_PUBLICATION](docs/AUTO_PUBLICATION.md) |
 | 局域网预览、手动验证与停止 | [LAN_PREVIEW](docs/LAN_PREVIEW.md) |
+| 电脑端、服务器验收与部署准备 | [M5-C 电脑验收](docs/M5C_DESKTOP_RESULTS.md) · [M9 服务器验收](docs/M9_SERVER_RESULTS.md) · [M9 部署设计](docs/DEPLOYMENT_PREPARATION.md) |
 | 最近真实采集和测试证据 | [M4-D 验收](docs/M4D_RESULTS.md) |
 | 只读质量报告与校级来源试点 | [质量报告](docs/QUALITY_REPORT.md) · [M5-B 结果](docs/M5B_RESULTS.md) |
 | 产品覆盖、多维分类与筛选 | [覆盖计划](docs/PRODUCT_SCOPE.md) · [目录盘点](docs/SOURCE_COVERAGE.md) · [v2 契约](docs/TAXONOMY_V1.md) · [M6 验收](docs/M6_RESULTS.md) |

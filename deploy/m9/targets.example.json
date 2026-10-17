@@ -1,0 +1,23 @@
+{
+  "schema_version": 1,
+  "stage": "design_only",
+  "production_authorized": false,
+  "nonproduction_target": null,
+  "server_region": null,
+  "domain": null,
+  "registration_status": "unknown",
+  "source_terms_review": "pending",
+  "public_summary_review": "pending",
+  "public_disclaimer_ui": "pending",
+  "linux_native_acceptance": "not_executed",
+  "second_device_acceptance": "not_executed",
+  "nginx_runtime_acceptance": "not_executed",
+  "tls_runtime_acceptance": "not_executed",
+  "llm_enabled": false,
+  "paid_model_budget": 0,
+  "paid_model_currency": null,
+  "model_credentials_included": false,
+  "collection_enabled": false,
+  "public_listener_enabled": false,
+  "public_notice": "非成都大学官方服务；内容来自各通知所示官方来源，完整要求以原文为准。"
+}

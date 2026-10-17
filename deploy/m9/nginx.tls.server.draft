@@ -1,0 +1,11 @@
+# NOT included by nginx.conf.draft. Paths deliberately require operator review.
+# No public listener, certificate acquisition, DNS or firewall changes here.
+server {
+    listen 127.0.0.1:9443 ssl;
+    server_name localhost;
+    ssl_certificate /REVIEW_REQUIRED/cdu-test/fullchain.pem;
+    ssl_certificate_key /REVIEW_REQUIRED/cdu-test/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_session_tickets off;
+    include gateway-server.inc;
+}

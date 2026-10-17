@@ -1,0 +1,44 @@
+# Isolated test artifact. Requires explicit nonproduction authorization.
+# Native results: docs/M9_SERVER_RESULTS.md. Public deployment remains unapproved.
+# Use an isolated nginx -p prefix. All active listeners are literal loopback.
+worker_processes 1;
+pid logs/nginx.pid;
+error_log logs/error.log crit;
+events { worker_connections 64; }
+http {
+    server_tokens off;
+    access_log off;
+    default_type text/plain;
+    client_body_temp_path temp/client_body;
+    proxy_temp_path temp/proxy;
+    fastcgi_temp_path temp/fastcgi;
+    uwsgi_temp_path temp/uwsgi;
+    scgi_temp_path temp/scgi;
+    client_max_body_size 1k;
+    client_header_timeout 5s;
+    client_body_timeout 5s;
+    send_timeout 5s;
+    keepalive_timeout 5s;
+    client_header_buffer_size 1k;
+    large_client_header_buffers 2 4k;
+    limit_req_zone $binary_remote_addr zone=peer_rate:1m rate=2r/s;
+    limit_req_zone $server_name zone=service_rate:1m rate=8r/s;
+    limit_conn_zone $binary_remote_addr zone=peer_connections:1m;
+    limit_conn_zone $server_name zone=service_connections:1m;
+    map $status $retry_after { default ""; 429 1; 503 1; }
+    map $status $read_only_allow { default ""; 405 "GET, HEAD"; }
+    map $http_host $draft_host_allowed {
+        default 0;
+        "127.0.0.1:8870" 1;
+        "localhost:8870" 1;
+        "127.0.0.1:9443" 1;
+        "localhost:9443" 1;
+    }
+    server {
+        listen 127.0.0.1:8870;
+        server_name localhost;
+        include gateway-server.inc;
+    }
+    # Future isolated HTTPS test only; NOT included by default:
+    # include nginx.tls.server.draft;
+}

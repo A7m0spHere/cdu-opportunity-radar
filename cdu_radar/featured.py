@@ -101,7 +101,7 @@ def analysis_for(queue, repo, analyzer, notice_id, now):
     try:
         cached=json.loads(row['result'])
         supplied,_=analyzer.prepare(notice)
-        checked=validate(cached['proposal'],notice,supplied,analyzer,now)
+        checked=analyzer.validate(cached['proposal'],notice,supplied,now)
         return notice,checked,checked['state']
     except (ValueError,TypeError,KeyError):return notice,None,'failed'
 

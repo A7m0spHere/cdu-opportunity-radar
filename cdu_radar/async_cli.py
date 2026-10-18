@@ -17,12 +17,14 @@ from .taxonomy import TYPES, TOPICS
 def register(sub):
     parser=sub.add_parser('analysis-queue',help='Private async analysis; scan/status/ledger never call models')
     actions=parser.add_subparsers(dest='queue_action',required=True)
-    for name in ['scan','work','status','ledger']:
+    for name in ['scan','work','status','ledger','revalidate']:
         cmd=actions.add_parser(name)
         cmd.add_argument('--db',type=Path,required=True,help='Existing raw DB, opened read-only')
         cmd.add_argument('--state-db',type=Path,required=True,help='Independent private M7 job database')
         cmd.add_argument('--config',type=Path,help='Non-secret JSON: llm, queue, prescreen')
         cmd.add_argument('--mock',action='store_true',help='Explicit synthetic offline mode; never reads keys or uses network')
+        if name in {'scan','work','revalidate'}:cmd.add_argument('--notice-id',action='append',type=int,required=name=='revalidate',help='Restrict both scan and dispatch to selected notice IDs; repeatable')
+        if name=='revalidate':cmd.add_argument('--from-pipeline',required=True,help='Exact prior pipeline; same provider/prompt/schema required; no model calls')
         if name=='work':
             cmd.add_argument('--send',action='store_true',help='Explicitly authorize provider requests under configured budget')
             cmd.add_argument('--watch',action='store_true',help='Poll and process bounded rounds until interrupted')
@@ -54,7 +56,9 @@ def configuration(path, mock):
         if not isinstance(values,list) or any(not isinstance(v,str) or v not in choices for v in values) or len(values)!=len(set(values)):
             raise ValueError('Invalid prescreen values')
         pre[key]=sorted(values)
-    return AsyncAnalyzer(config,mock=mock,prescreen=pre),policy
+    from .review_contract import ReviewAnalyzer
+    kind=ReviewAnalyzer if config.analysis_mode=='classification_review_v2' else AsyncAnalyzer
+    return kind(config,mock=mock,prescreen=pre),policy
 
 
 def command(args):
@@ -63,16 +67,17 @@ def command(args):
             raise ValueError('work requires exactly one of --mock or --send')
         if args.queue_action=='work' and (not 1<=args.interval<=3600):raise ValueError('Invalid worker interval')
         # status without config is read-only inspection of all recorded versions.
-        analyzer,policy=configuration(args.config,args.mock) if args.config or args.mock or args.queue_action in {'scan','work'} else (None,QueuePolicy())
+        analyzer,policy=configuration(args.config,args.mock) if args.config or args.mock or args.queue_action in {'scan','work','revalidate'} else (None,QueuePolicy())
         with JobQueue(args.state_db,args.db,policy=policy,read_only=args.queue_action in {'status','ledger'}) as queue:
-            if args.queue_action=='scan':result=queue.scan(analyzer)
+            if args.queue_action=='scan':result=queue.scan(analyzer,notice_ids=args.notice_id)
+            elif args.queue_action=='revalidate':result=queue.revalidate(analyzer,args.notice_id,args.from_pipeline)
             elif args.queue_action=='status':result=queue.report(analyzer=analyzer,include_results=args.include_results)
             elif args.queue_action=='ledger':result=queue.ledger()
             else:
                 from .async_worker import run_round
                 while True:
                     point=reference_datetime(args.as_of)
-                    result=run_round(queue,analyzer,reference_time=point)
+                    result=run_round(queue,analyzer,reference_time=point,notice_ids=args.notice_id)
                     if not args.watch:break
                     print(json.dumps(result,ensure_ascii=False),flush=True)
                     time.sleep(args.interval)

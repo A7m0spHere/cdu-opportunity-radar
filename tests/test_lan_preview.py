@@ -53,7 +53,7 @@ def test_public_page_api_and_feed_match_upstream(preview):
     for path in module.PUBLIC_ROUTES:
         status,h,body=request(server,path)
         original=request(upstream,path)
-        expected=503 if path=='/rss/v1/featured.xml' else 200
+        expected=503 if path in {'/rss/v1/featured.xml','/rss/v2/featured.xml'} else 200
         assert status==original[0]==expected and h['Content-Type']==original[1]['Content-Type']
         if status==503:assert b'<rss' not in body and 'ETag' not in h
         elif path!='/api/notices':assert body==original[2]

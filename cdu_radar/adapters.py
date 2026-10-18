@@ -18,6 +18,7 @@ LIST_SPECS = {
     "pharmacy": (".newlist1 > ul.list", "li", "h3", "span"),
     "electronics": ("div.list > ul", "li", None, "i"),
     "construction": ("div.list > ul", "li", None, "i"),
+    "teaching": ("div.text-list > ul", "li", None, "span.span"),
 }
 HEADINGS = {"innovation":"h3", "art":".article-title", "film":".article-title",
             "pharmacy":"h2.tit", "electronics":".content-title h4", "construction":".conth1", "teaching":".art-tit h3"}
@@ -67,7 +68,7 @@ class VsbAdapter:
             if anchor is None:
                 raise ParseError(f"{self.kind}: notice row has no article link")
             target = official_url(urljoin(url, anchor["href"]))
-            if not ARTICLE_PATH.fullmatch(urlsplit(target).path) and self.kind in {"computer","business","education","campus"}:
+            if not ARTICLE_PATH.fullmatch(urlsplit(target).path) and self.kind in {"computer","business","education","campus","teaching"}:
                 raise ParseError(f"{self.kind}: unexpected article path: {target}")
             if self.kind in {"computer","education"}:
                 title = clean_text(anchor.get("title") or anchor.get_text("", strip=True))

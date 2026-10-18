@@ -157,8 +157,8 @@ def test_api_never_serves_stale_data_on_rss_failure(auto_service,tmp_path,monkey
 def test_pending_unit_stays_excluded_and_empty_data_is_normal(store,tmp_path,loopback_only):
     from cdu_radar.sources import load_sources
     store.sync_sources(load_sources())
-    store.save_notice('computer','https://jw.cdu.edu.cn/info/1010/90001.htm',
-        Article('合成转载通知','2026-10-15',BODY,content_source_id='department-jw'),seen_at=NOW.isoformat())
+    store.save_notice('computer','https://kjc.cdu.edu.cn/info/1010/90001.htm',
+        Article('合成转载通知','2026-10-15',BODY,content_source_id='department-kjc'),seen_at=NOW.isoformat())
     c=AutoFeedController(Path(store.db.execute('PRAGMA database_list').fetchone()[2]),tmp_path/'pending',clock=lambda:NOW)
     assert c.refresh()
     s=make_server(c,port=0);t=threading.Thread(target=s.serve_forever,kwargs={'poll_interval':0.02},daemon=True);t.start()

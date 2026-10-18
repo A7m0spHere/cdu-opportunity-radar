@@ -4438,5 +4438,29 @@
     "error_category": null,
     "error_reason": null,
     "content_adapter": null
+  },
+  {
+    "id": "department-jw-notices",
+    "college": "教务处（招生办公室）",
+    "homepage": "https://jw.cdu.edu.cn/",
+    "column_name": "教务公告",
+    "column_url": "https://jw.cdu.edu.cn/jwgg.htm",
+    "column_type": "通知公告",
+    "adapter": "teaching",
+    "status": "verified",
+    "last_verified_at": "2026-10-18T07:40:41.918351+00:00",
+    "directory_checked_at": "2026-10-13T12:10:37.320081+00:00",
+    "note": "来自教务处首页“通知公告”的更多链接；2026-10-18 有界尝试 6 篇，5 篇正文解析及隔离入库通过，有效原文重复解析返回 unchanged；置顶登录指南为 PDF-only，记录解析失败且不发布。按栏目收录普通教务信息，不按 AI 或竞赛关键词过滤。",
+    "unit_id": "department-jw",
+    "unit_type": "校级部门",
+    "official_domain": "jw.cdu.edu.cn",
+    "discovered_from": "https://jw.cdu.edu.cn/",
+    "last_checked_at": "2026-10-18T07:40:41.918351+00:00",
+    "accessible": true,
+    "articles_found": true,
+    "parser_supported": true,
+    "error_category": null,
+    "error_reason": null,
+    "content_adapter": "teaching"
   }
 ]

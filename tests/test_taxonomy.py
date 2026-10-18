@@ -146,14 +146,14 @@ def test_filter_views_match_legacy_rss_and_do_not_write_database(auto_service):
 
 def test_inventory_counts_queue_and_observation_semantics_no_network(capsys):
     report=inventory();s=report['summary']
-    assert (s['units'],s['registered_entries'],s['candidate_columns'],s['unique_candidate_urls'])==(42,185,152,151)
-    assert s['collection_validated_columns']==s['implemented_columns']==11
+    assert (s['units'],s['registered_entries'],s['candidate_columns'],s['unique_candidate_urls'])==(42,186,153,152)
+    assert s['collection_validated_columns']==s['implemented_columns']==12
     assert s['remaining_columns']==141 and s['long_term_healthy_columns'] is None
     assert report['network_requests']==0
     assert all(c['long_term_health']=='not_established' and c['current_accessibility']=='not_checked' for c in report['columns'])
     assert {b for b in report['batch_counts'] if b.startswith('B')}=={'B0','B1','B2','B3'}
     assert all(not c['collection_validated'] for c in report['columns'] if c['batch'] in {'B1','B2','B3'})
     assert len(report['units'])==42 and all('parent_unit' in u for u in report['units'])
-    assert '185' in markdown(report)
+    assert '186' in markdown(report)
     assert main(['source-coverage','--format','json'])==0
     assert json.loads(capsys.readouterr().out)['summary']==s

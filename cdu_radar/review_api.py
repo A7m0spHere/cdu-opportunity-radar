@@ -10,6 +10,7 @@ from .featured import overview, scope_stats
 from .models import InvalidFilter
 from .taxonomy import API_V2, FILTER_KEYS, parse_filters, validate_public_v2
 from . import rss_v1
+from . import undergraduate
 
 API_V4 = '/api/notices/v4'
 RSS_ROUTES = ('/rss/v2/all.xml', '/rss/v2/featured.xml')
@@ -20,22 +21,24 @@ def split_query(path, options, categories):
     base, _, query = path.partition('?')
     if base not in {API_V4,*RSS_ROUTES} or len(path)>2048 or len(query)>1024 or re.search(r'%(?![0-9a-fA-F]{2})',query):
         raise InvalidFilter('Invalid review filter')
-    try:pairs=parse_qsl(query,keep_blank_values=True,strict_parsing=True,encoding='utf-8',errors='strict',max_num_fields=11)
+    try:pairs=parse_qsl(query,keep_blank_values=True,strict_parsing=True,encoding='utf-8',errors='strict',max_num_fields=len(FILTER_KEYS)+3)
     except (ValueError,UnicodeError) as exc:raise InvalidFilter('Invalid review filter') from exc
     values={}
     for key,value in pairs:
-        if key in values or key not in {*FILTER_KEYS,'selection','domain'} or not value or len(value)>100:
+        if key in values or key not in {*FILTER_KEYS,'selection','domain','audience'} or not value or len(value)>100:
             raise InvalidFilter('Invalid review filter')
         values[key]=value
     selection=values.pop('selection','featured' if base==RSS_ROUTES[1] else 'all')
     if selection not in {'all','featured'} or base in RSS_ROUTES and selection!=('featured' if base==RSS_ROUTES[1] else 'all'):
         raise InvalidFilter('Invalid selection')
+    audience=values.pop('audience','all')
+    if audience not in {'all','undergraduate'}:raise InvalidFilter('Invalid audience')
     domain=values.pop('domain','all')
     parts=domain.split(',')
     if len(parts)!=len(set(parts)) or not set(parts)<={'all','unclassified',*DOMAINS} or len(parts)>1 and {'all','unclassified'}&set(parts):
         raise InvalidFilter('Invalid domain')
     f=parse_filters(API_V2+('?' + urlencode(values) if values else ''),options,categories)
-    return dict(f,domain=','.join(sorted(parts)),selection=selection)
+    return dict(f,domain=','.join(sorted(parts)),selection=selection,audience=audience)
 
 
 def canonical_path(filters):
@@ -57,7 +60,8 @@ def review(item, row, analysis, state):
             base.update(type=model['type'],domains=model['domains'],topics=model['topics'],method='llm_reviewed',
                         model_state='reviewed',type_state='classified',topic_state='tagged' if model['topics'] else 'unclassified')
             result.update(state='reviewed',changed=changed,evidence=analysis['classification_evidence'],reason=analysis['classification_reason'])
-    return dict(item,classification=base,classification_review=result)
+    return dict(item,classification=base,classification_review=result,
+        undergraduate=undergraduate.assess(row['title'],row['content']))
 
 
 def review_summary(items):
@@ -77,12 +81,15 @@ def project(payload, path, rows, analyses, decisions, policy):
         c=i['classification'];day=i['source_published_date']
         def tags(field,actual):
             return f[field]=='all' or (f[field]=='unclassified' and not actual) or (f[field]!='unclassified' and set(f[field].split(','))<=set(actual))
-        return (f['source'] in {'all',i['publisher_id']} and f['type'] in {'all',c['type']} and tags('domain',c['domains']) and tags('topic',c['topics'])
+        return ((f['audience']=='all' or i['undergraduate']['state']=='relevant')
+            and f['source'] in {'all',i['publisher_id']} and f['type'] in {'all',c['type']} and tags('domain',c['domains']) and tags('topic',c['topics'])
             and f['status'] in {'all',i['registration_status']} and f['view'] in {'all',i['listing']}
             and f['category'] in {'all',i['category']} and (f['published']=='all' or (day is not None)==(f['published']=='known'))
             and (not f['from'] or day is not None and day>=f['from']) and (not f['to'] or day is not None and day<=f['to']))
     cohort=[i for i in entries if matches(i)]
     entries=[i for i in cohort if f['selection']=='all' or i['featured']['decision']=='selected']
+    if f['audience']=='undergraduate':
+        entries=[dict(i,summary=i['undergraduate']['summary']) for i in entries]
     return dict(payload,schema_version=4,taxonomy_version=2,filter_options=opts,items=entries,applied_filters=f,
         classification_review=review_summary(cohort),featured=overview(cohort,policy),
         counts={'all':len(entries),**{s:sum(i['listing']==s for i in entries) for s in ['current','history','unknown']}},
@@ -122,13 +129,17 @@ def validate_public_v4(payload):
     base=deepcopy(payload);base.pop('classification_review');base.update(schema_version=3,taxonomy_version=1)
     if set(base['filter_options'])!={'sources','types','topics','statuses','date_presence','domains'}:raise ValueError('Invalid filter options')
     if base['filter_options'].pop('domains')!=[{'id':k,'label':v} for k,v in DOMAINS.items()]:raise ValueError('Invalid domains')
-    for key in ['domain','selection']:
+    for key in ['domain','selection','audience']:
         if key not in base['applied_filters']:raise ValueError('Missing v4 filter')
+    if base['applied_filters'].pop('audience') not in {'all','undergraduate'}:raise ValueError('Invalid v4 audience')
     base['applied_filters'].pop('domain')
     counts=payload['classification_review']
     if not isinstance(counts,dict) or set(counts)!={'total','corrected',*REVIEW_STATES} or any(type(v) is not int or v<0 for v in counts.values()) or sum(counts[s] for s in REVIEW_STATES)!=counts['total'] or counts['corrected']>counts['reviewed']:
         raise ValueError('Invalid review counts')
     for item in base['items']:
+        scope=item.pop('undergraduate',None);undergraduate.validate(scope)
+        if payload['applied_filters']['audience']=='undergraduate' and (scope['state']!='relevant' or item['summary']!=scope['summary']):
+            raise ValueError('Inconsistent undergraduate projection')
         review_info=item.pop('classification_review',None);c=item['classification']
         if not isinstance(review_info,dict) or set(review_info)!={'state','changed','rule','evidence','reason'} or review_info['state'] not in REVIEW_STATES or type(review_info['changed']) is not bool:
             raise ValueError('Invalid review metadata')
@@ -144,7 +155,7 @@ def validate_public_v4(payload):
         from .taxonomy import POLICY
         item['classification']={k:v for k,v in c.items() if k!='domains'}
         item['classification'].update(version=1,policy=POLICY,method='rules',model_state='not_analyzed')
-    base['subscription']['url']=rss_v1.canonical_path(payload['applied_filters']['selection'],payload['applied_filters'])
+    base['subscription']['url']=rss_v1.canonical_path(payload['applied_filters']['selection'],base['applied_filters'])
     validate_public_v3(base)
     if payload['subscription']!={'available':True,'url':canonical_path(payload['applied_filters']),'reason':None}:
         raise ValueError('Invalid v4 subscription')

@@ -3,9 +3,10 @@
 const $ = (id) => document.getElementById(id);
 const viewButtons = [...document.querySelectorAll("[data-view]")];
 const selectionButtons = [...document.querySelectorAll("[data-selection]")];
+const audienceButtons = [...document.querySelectorAll("[data-audience]")];
 const statuses = {possible: "可能仍可参与", closed: "报名已截止", unknown: "报名状态未确认"};
 const labels = {all: "最新通知", current: "当前机会", history: "历史信息"};
-let data = null, view = "all", selection = "all", pollTimer, expiryTimer, requestController, generation = 0;
+let data = null, view = "all", selection = "all", audience = "undergraduate", pollTimer, expiryTimer, requestController, generation = 0;
 const expandedClassifications = new Set(), expandedFeatured = new Set();
 const filterControls = {source: "publisher", type: "information-type", domain: "domain", topic: "topic", status: "registration-status", published: "date-presence", from: "date-from", to: "date-to"};
 const subscriptionHelp = "订阅最多返回最新 100 条；精选分析尚未就绪时会暂不可用。链接仅在当前服务运行且可访问时有效。";
@@ -13,6 +14,7 @@ const subscriptionHelp = "订阅最多返回最新 100 条；精选分析尚未�
 function queryPath() {
   const params = new URLSearchParams();
   if (selection !== "all") params.set("selection", selection);
+  if (audience !== "all") params.set("audience", audience);
   for (const [key,id] of Object.entries(filterControls)) {
     const value = $(id).value;
     if (value && value !== "all") params.set(key, value);
@@ -72,6 +74,10 @@ function validate(payload) {
         !payload.filter_options.sources.some((s) => s.id === item.publisher_id) || !Array.isArray(item.discovery_source_ids)) throw new Error("Invalid classification");
     const review = item.classification_review;
     if (!review || !["not_analyzed", "pending", "reviewed", "uncertain", "failed", "stale"].includes(review.state) || !review.rule || !Array.isArray(review.evidence) || typeof review.changed !== "boolean" || review.evidence.some((e) => typeof e.quote !== "string")) throw new Error("Invalid classification review");
+    const scope = item.undergraduate;
+    if (!scope || !["relevant", "excluded", "uncertain"].includes(scope.state) || !Array.isArray(scope.evidence) ||
+        (scope.state === "relevant" && (typeof scope.summary !== "string" || !scope.summary)) ||
+        (audience === "undergraduate" && (scope.state !== "relevant" || item.summary !== scope.summary))) throw new Error("Invalid undergraduate scope");
     if (guids.has(item.guid) || urls.has(item.source_url)) return false;
     guids.add(item.guid); urls.add(item.source_url); return true;
   });
@@ -122,6 +128,7 @@ function card(item) {
   const fragment = $("notice-card").content.cloneNode(true);
   const find = (selector) => fragment.querySelector(selector);
   fragment.querySelector("article").dataset.guid = item.guid;
+  fragment.querySelector("article").dataset.audience = audience;
   const time = find(".date-value");
   if (item.source_published_date) {
     time.dateTime = item.source_published_date;
@@ -140,6 +147,9 @@ function card(item) {
   find(".notice-title").textContent = item.title;
   find(".source-name").textContent = "官方来源 · " + item.source_name;
   find(".summary").textContent = item.summary;
+  const audienceNote = find(".audience-note");
+  audienceNote.hidden = audience !== "undergraduate";
+  audienceNote.textContent = "本科生办理要点 · 原文节选" + (item.listing === "history" ? " · 历史安排，先核对是否适用" : " · 年级、专业等具体资格以原文为准");
   const review = item.classification_review;
   const reviewLabels = {not_analyzed: "规则初分", pending: "等待模型复核", reviewed: review.changed ? "模型已纠正" : "模型已复核", uncertain: "复核依据不足", failed: "模型复核暂不可用", stale: "等待重新复核"};
   find(".classification-label").textContent = "分类依据 · " + reviewLabels[review.state];
@@ -174,8 +184,9 @@ function card(item) {
 }
 
 function render() {
-  $("list-title").textContent = (selection === "featured" ? "重要精选 · " : "") + labels[view];
+  $("list-title").textContent = (audience === "undergraduate" ? "本科生实用 · " : "") + (selection === "featured" ? "重要精选 · " : "") + labels[view];
   selectionButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.selection === selection)));
+  audienceButtons.forEach((button) => button.setAttribute("aria-pressed", String(button.dataset.audience === audience)));
   $("view-note").textContent = view === "current" ? "仅列出有明确时间依据的可能参与机会；具体资格仍请核对官方原文。" :
     view === "history" ? "历史报道或明确已截止的信息；报名状态未知的历史通知不会标为已截止。" :
       "原文发布日期优先；日期未提供时，按首次收录时间排序。";
@@ -217,9 +228,10 @@ function render() {
   if (!items.length) {
     if (selection === "featured" && featured.state === "degraded") message("degraded", "智能精选暂时降级", "当前没有可展示的已核验精选；这不表示没有重要通知。请切换“全部信息”查看官方通知。");
     else if (selection === "featured" && featured.state === "pending") message("pending", featured.coverage.not_analyzed + featured.coverage.in_progress > 0 ? "精选尚未完成分析" : "精选依据仍待核实", "未分析或依据不足的信息仍保留在“全部信息”，不会被删除。");
-    else if (Object.values(filterControls).some((id) => $(id).value && $(id).value !== "all")) message("empty", "这些条件下暂时没有通知", "可以减少筛选条件，或重置后查看全部合格校园信息。未知状态不代表没有相关信息。");
+    else if (Object.values(filterControls).some((id) => $(id).value && $(id).value !== "all")) message("empty", "这些条件下暂时没有通知", "可以减少筛选条件，或重置后查看本科生实用信息。未知状态不代表没有相关信息。");
     else if (view === "current") message("empty", "暂未确认当前可参与的机会", "你仍可在“最新通知”浏览校园信息。报名状态未确认，不代表已经截止。");
     else if (view === "history") message("empty", "暂时没有历史信息", "有符合历史条件的通知后，会在这里显示。");
+    else if (audience === "undergraduate") message("empty", "暂未确认适合本科生的实用信息", "需要有学生办理事项或参与机会的原文依据；你仍可切换“全部原文”核对完整信息。");
     else message("empty", "暂时没有可展示的通知", "采集到通过质量检查的官方通知后，会自动出现在这里。");
   }
 }
@@ -273,6 +285,7 @@ async function refresh() {
 
 viewButtons.forEach((button) => button.addEventListener("click", () => { view = button.dataset.view; render(); }));
 selectionButtons.forEach((button) => button.addEventListener("click", () => { selection = button.dataset.selection; revalidate(); render(); refresh(); }));
+audienceButtons.forEach((button) => button.addEventListener("click", () => { audience = button.dataset.audience; revalidate(); render(); refresh(); }));
 Object.entries(filterControls).forEach(([key,id]) => $(id).addEventListener("change", () => {
   if (key === "published" && $(id).value === "unknown") {
     $("date-from").value = $("date-to").value = "";
@@ -283,7 +296,7 @@ Object.entries(filterControls).forEach(([key,id]) => $(id).addEventListener("cha
 $("reset-filters").addEventListener("click", () => {
   for (const [key,id] of Object.entries(filterControls)) $(id).value = ["from","to"].includes(key) ? "" : "all";
   $("date-from").disabled = $("date-to").disabled = false;
-  view = "all"; selection = "all"; revalidate(); render(); refresh();
+  view = "all"; selection = "all"; audience = "undergraduate"; revalidate(); render(); refresh();
 });
 $("refresh").addEventListener("click", refresh);
 $("copy-subscription").addEventListener("click", async () => {

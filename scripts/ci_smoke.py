@@ -49,7 +49,7 @@ def main():
         with Store(mock_db) as store:
             store.sync_sources(load_sources())
             store.save_notice('computer','https://computer.cdu.edu.cn/info/1/999999.htm',
-                Article('合成课程调整通知','2026-10-16','这是合成的课程时间调整通知，请查看安排。'))
+                Article('合成课程调整通知','2026-10-16','本科生须登录教务系统核对课程时间调整，具体安排以原文为准。'))
         mock_original=mock_db.read_bytes()
         state=Path(directory)/'m7-jobs.sqlite3'
         result=subprocess.run([sys.executable,'-I','-m','cdu_radar','analysis-queue','work',
@@ -89,8 +89,18 @@ def main():
                 assert response.status==200 and payload['featured']['state']=='pending'
                 validate_public_v3(payload)
             finally:connection.close()
+            from cdu_radar.review_api import validate_public_v4
+            connection=http.client.HTTPConnection('127.0.0.1',server.server_address[1],timeout=5)
+            try:
+                connection.request('GET','/api/notices/v4?audience=undergraduate')
+                response=connection.getresponse();payload=json.loads(response.read())
+                assert response.status==200 and len(payload['items'])==1
+                validate_public_v4(payload)
+                assert payload['items'][0]['undergraduate']['state']=='relevant'
+                assert payload['items'][0]['summary']==payload['items'][0]['undergraduate']['summary']
+            finally:connection.close()
             from xml.etree import ElementTree as ET
-            for path,expected in [('/rss/v1/all.xml',200),('/rss/v1/featured.xml',503),('/rss/v1/all.xml?source=invalid',400)]:
+            for path,expected in [('/rss/v1/all.xml',200),('/rss/v1/featured.xml',503),('/rss/v1/all.xml?source=invalid',400),('/rss/v2/all.xml?audience=undergraduate',200)]:
                 connection=http.client.HTTPConnection('127.0.0.1',server.server_address[1],timeout=5)
                 try:
                     connection.request('GET',path)

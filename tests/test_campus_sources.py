@@ -64,9 +64,10 @@ def test_campus_collection_idempotence_and_known_pending_publisher_gate(store,un
         assert collect(store,fetcher,[source],limit=1)[0]['unchanged']==1
     assert len(store.feed_rows(10))==1
     assert all('/system/_content/' not in url for url in calls)
-    # Supporting the two departments must not implicitly verify teaching or
-    # every pending column of the same campus.
-    assert all(s.status!='verified' for s in load_sources() if s.unit_id=='department-jw')
+    # A verified teaching notice column does not verify the department's
+    # management documents or service-procedure columns.
+    assert all(s.status!='verified' for s in load_sources()
+        if s.unit_id=='department-jw' and s.id!='department-jw-notices')
 
 
 def test_campus_bounded_pagination_and_cross_unit_link_identity():

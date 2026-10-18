@@ -359,8 +359,8 @@ def test_explicit_source_withdrawal_is_not_published(store):
 def test_pending_content_unit_not_accepted_through_trusted_discovery(store):
     from cdu_radar.sources import load_sources
     store.sync_sources(load_sources())
-    store.save_notice('computer','https://jw.cdu.edu.cn/info/1010/90001.htm',
-        Article('合成转载通知','2026-10-15',BODY,content_source_id='department-jw'),seen_at=NOW.isoformat())
+    store.save_notice('computer','https://kjc.cdu.edu.cn/info/1010/90001.htm',
+        Article('合成转载通知','2026-10-15',BODY,content_source_id='department-kjc'),seen_at=NOW.isoformat())
     assert not plan(store)['items']
 
 

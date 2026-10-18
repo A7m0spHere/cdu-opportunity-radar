@@ -1,8 +1,14 @@
 # M1 信息源清单
 
-M6 的产品范围、分批接入与逐单位缺口见 [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) / [SOURCE_COVERAGE.md](SOURCE_COVERAGE.md)。可用离线 `python -m cdu_radar source-coverage --format json` 导出分层状态和全部候选队列；候选/曾可访问不等于已接入或长期健康，本轮没有扩抓来源。
+产品范围、分批接入与逐单位缺口见 [PRODUCT_SCOPE.md](PRODUCT_SCOPE.md) / [SOURCE_COVERAGE.md](SOURCE_COVERAGE.md)。可用离线 `python -m cdu_radar source-coverage --format json` 导出分层状态和全部候选队列；候选/曾可访问不等于已接入或长期健康。
 
-## 当前增量：M5-B（2026-10-16）
+## 当前增量：教务公告（2026-10-18）
+
+新增 `department-jw-notices`，对应教务处首页“通知公告”的[教务公告栏目](https://jw.cdu.edu.cn/jwgg.htm)，复用 `teaching` 正文模板并补齐独立列表解析。普通教务通知按栏目收录，不按 AI、竞赛或模型分数过滤。当前已实现并有界实采验证 **12** 个栏目；186 条来源登记含 153 条栏目记录、152 个不同栏目 URL，141 条候选尚未接入。
+
+本次第一页尝试 6 篇，5 篇普通公告解析、入库及有效原文重复校验通过；置顶“教务系统登录指南”只有嵌入 PDF，记录失败且不发布。此前由影视与动画学院发现的 2 篇教务原文重新核验后可展示。教务处其余管理文件、办事流程与月报栏目仍 pending。实采范围、失败与复现命令见 [接入记录](TEACHING_SOURCE_RESULTS.md)。
+
+## 历史增量：M5-B（2026-10-16）
 
 本轮新增验证学生处 `department-xsc-column-148` 与团委 `department-tuanwei-column-149` 两个既有通知栏目，使用共享 `campus` 适配器；已实现并真实验证栏目由 9 增至 **11**。各取 3 篇真实详情、隔离入库及重复采集通过，见 [试点结果](M5B_RESULTS.md)。其余候选状态不变，教务处仍 pending。
 

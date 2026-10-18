@@ -1,0 +1,18 @@
+[
+  {
+    "file": "list.html",
+    "official_url": "https://jw.cdu.edu.cn/jwgg.htm",
+    "captured_at": "2026-10-18T07:37:10.485194+00:00",
+    "original_sha256": "009a33e3cc645057d002761f56d437eafe2f71d64a55886e28ef973c7c4bf531",
+    "fixture_sha256": "173c590f87988328b87deb6601c01f6b1c7806227c5488410d7644b474115629",
+    "note": "真实 DOM 裁剪样本；列表仅留三项及下页，正文仅留标题、来源日期及开头两段，移除作者、审稿、联系方式、名单和脚本。"
+  },
+  {
+    "file": "article.html",
+    "official_url": "https://jw.cdu.edu.cn/info/1043/12471.htm",
+    "captured_at": "2026-10-18T07:37:10.486389+00:00",
+    "original_sha256": "edfe4aa035b27e0869a2e0d67e26edc33b3540868654884224407706fc970464",
+    "fixture_sha256": "4d5fe7bb8f250a2d5c05fec0b01373680d763a6e087748ed7a454b6cb7e9915e",
+    "note": "真实 DOM 裁剪样本；列表仅留三项及下页，正文仅留标题、来源日期及开头两段，移除作者、审稿、联系方式、名单和脚本。"
+  }
+]

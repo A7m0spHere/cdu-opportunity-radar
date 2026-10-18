@@ -39,7 +39,12 @@ def main():
         assert json.loads(result.stdout)['snapshot']['raw_unique_notices']==0 and db.read_bytes()==original
         result=subprocess.run([sys.executable,'-I','-m','cdu_radar','source-coverage','--format','json'],
                               cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
-        assert json.loads(result.stdout)['summary']['collection_validated_columns']==11
+        coverage=json.loads(result.stdout)
+        validated_ids={s.id for s in load_sources() if s.column_url and s.status=='verified'
+                       and s.parser_supported and s.adapter and s.last_verified_at}
+        assert 'department-jw-notices' in validated_ids
+        assert {c['id'] for c in coverage['columns'] if c['collection_validated']}==validated_ids
+        assert coverage['summary']['collection_validated_columns']==len(validated_ids)
         mock_db=Path(directory)/'synthetic.sqlite3'
         with Store(mock_db) as store:
             store.sync_sources(load_sources())

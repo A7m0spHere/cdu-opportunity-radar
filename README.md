@@ -12,7 +12,7 @@ Python 3.11+ · [AGPL-3.0-only](LICENSE) · 本地 MVP，有限体验准备阶�
 
 ## 目前能做什么
 
-- **浏览通知**：默认全部合格信息，可切换有原文依据的“重要精选”；两者共用来源、类型、主题、日期、报名状态与当前/历史筛选。未分析或未入选不删除原文，智能降级单独提示。
+- **浏览通知**：默认“本科生实用”，只总结学生需要办理的通知和可参与的机会，排除教师事务、研究生专属及纯回顾；可切换“全部原文”或在当前范围查看“重要精选”。来源、类型、主题、日期、报名状态与当前/历史筛选共用，原文要点保留出处，受众或资格不明不猜测。
 - **核实来源**：展示官方发布单位、原文链接、有依据的来源日期，以及可追溯的原文节选。
 - **分类与复核**：页面以信息类型为主，分开业务领域与学科主题；可配置异步 LLM 分类复核，证据通过后采用结果，依据不足或失败继续显示规则分类。页面提供复核进度和逐条分类依据。[配置与验证](docs/CLASSIFICATION_REVIEW.md)
 - **自动更新**：可启用定时采集；按最终原文 URL 去重，内容更新后刷新 RSS 与网页，保持 GUID 和首次聚合发布时间稳定。
@@ -71,7 +71,7 @@ python3 -m venv .venv
 
 独立的[私有异步分析 worker](docs/ASYNC_ANALYSIS.md) 支持离线 Mock、预算、重试和证据校验；网页/RSS 读取不触发模型调用。M7 的历史离线验证见 [M7 验收](docs/M7_RESULTS.md)，本次分类复核的真实调用和采用情况见 [分类复核](docs/CLASSIFICATION_REVIEW.md)。
 
-新版学生页读取 `/api/notices/v4`，筛选订阅使用 `/rss/v2/all.xml` 与 `/rss/v2/featured.xml`，共用有效分类。旧 v1/v2/v3 JSON 与 RSS v1 保留兼容投影。分类复核的真实小样本结果、凭证引用和受管 worker 见 [分类复核](docs/CLASSIFICATION_REVIEW.md)。
+新版学生页读取 `/api/notices/v4?audience=undergraduate`，筛选订阅使用 `/rss/v2/all.xml` 与 `/rss/v2/featured.xml`，共用受众范围、原文要点和有效分类。API 默认或 `audience=all` 仍返回全部合格原文；旧 v1/v2/v3 JSON 与 RSS v1 保留兼容投影。本科生范围采用独立的原文规则，LLM 当前复核分类；详细机制、真实小样本结果及 worker 见 [分类复核](docs/CLASSIFICATION_REVIEW.md)。
 
 ## 信息与接口
 

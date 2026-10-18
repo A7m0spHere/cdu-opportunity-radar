@@ -17,14 +17,14 @@
       <span class="brand-mark" aria-hidden="true"><i></i></span>
       <span>校园机会雷达<small>CDU CAMPUS BULLETIN</small></span>
     </a>
-    <a class="rss-link" href="/rss/v2/all.xml">全部 RSS 订阅 <span aria-hidden="true">↗</span></a>
+    <a class="rss-link" href="/rss/v2/all.xml?audience=undergraduate">本科生 RSS 订阅 <span aria-hidden="true">↗</span></a>
   </header>
   <main class="wrap">
     <section class="intro" aria-labelledby="page-title">
       <div>
         <p class="eyebrow"><span class="small-line" aria-hidden="true"></span> 成都大学 · 校园信息聚合</p>
         <h1 id="page-title">校园里的<span>新消息</span></h1>
-        <p class="intro-copy">通知公告、学院动态与校园活动，放在一处看。<br>按来源和主题自主筛选，保留官方原文与未知状态。</p>
+        <p class="intro-copy">本科生需要办理的通知、可以参与的机会，放在一处看。<br>先看适用对象与办理要点，再核对官方原文。</p>
         <p class="filter-help">非成都大学官方服务；内容来自各通知所示官方来源，完整要求以原文为准。</p>
       </div>
       <div class="update-panel">
@@ -37,10 +37,15 @@
       </div>
     </section>
     <p class="replay-note" id="replay-note" hidden>离线样本预览 · 时间按回放参考时点计算，未重新检查原文的实时可达性。</p>
+    <div class="selection-switch" role="group" aria-label="阅读对象">
+      <button type="button" data-audience="undergraduate" aria-pressed="true">本科生实用</button>
+      <button type="button" data-audience="all" aria-pressed="false">全部原文</button>
+      <p>只总结学业、奖助、校园服务和学生参与机会；对象不明确、教师事务与活动回顾不进入本科生总结。</p>
+    </div>
     <div class="selection-switch" role="group" aria-label="全部与精选">
       <button type="button" data-selection="all" aria-pressed="true">全部信息</button>
       <button type="button" data-selection="featured" aria-pressed="false">重要精选</button>
-      <p>全部保留合格原文；精选依据重要性建议与原文复核，不等同当前可报名。</p>
+      <p>在当前阅读范围内查看全部或重要精选；是否仍可参与，请结合日期和官方要求判断。</p>
     </div>
     <section class="toolbar" aria-label="通知筛选">
       <div class="views" role="group" aria-label="信息范围">
@@ -89,7 +94,7 @@
         <h2>先看信息，再核实原文。</h2>
         <div class="guide-item"><span class="guide-number">01</span><div><h3>报名未知，不等于已截止</h3><p>没有明确报名依据时，卡片不显示报名标签。可用“报名未知”筛选查看，具体安排请核实官方原文。</p></div></div>
         <div class="guide-item"><span class="guide-number">02</span><div><h3>发布日期来自原文</h3><p>卡片日期是可核实的原文发布日期。系统采集时间单独显示，不代替发布时间。</p></div></div>
-        <div class="guide-item"><span class="guide-number">03</span><div><h3>以官方要求为准</h3><p>分类仅供浏览，摘要为原文节选。参与资格、报名方式与附件要求，请打开官方原文核实。</p></div></div>
+        <div class="guide-item"><span class="guide-number">03</span><div><h3>只总结本科生实用信息</h3><p>本科生摘要抽取原文中的办理与参与要点。通过受众筛选不代表人人符合资格；具体年级、专业和附件要求仍以原文为准。</p></div></div>
         <div class="source-section"><h3>本页官方来源</h3><ul id="source-list"><li>连接成功后显示</li></ul><p>仅展示已验证来源中通过质量检查的通知。</p></div>
       </aside>
     </div>
@@ -103,6 +108,7 @@
         <h3 class="notice-title"></h3>
         <p class="source-name"></p>
         <p class="summary"></p>
+        <p class="audience-note" hidden></p>
         <details class="classification-reason"><summary class="classification-label">分类依据</summary><p class="classification-basis"></p><p class="classification-note"></p><ul class="classification-evidence"></ul></details>
         <details class="featured-reason" hidden><summary>为什么入选精选</summary><p class="featured-basis"></p><ul class="featured-evidence"></ul><p class="featured-boundary"></p></details>
         <div class="card-bottom"><span class="checked-at"></span><a class="original-link" target="_blank" rel="noopener noreferrer"><span>查看官方原文</span><span aria-hidden="true">↗</span></a></div>

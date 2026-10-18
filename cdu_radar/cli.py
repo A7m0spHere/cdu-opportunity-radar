@@ -114,6 +114,8 @@ def main(argv=None) -> int:
     auto_server.add_argument('--no-env-proxy',action='store_true')
     auto_server.add_argument('--analysis-state',type=Path,help='Optional private M7 queue; opened read-only, no model requests')
     auto_server.add_argument('--analysis-config',type=Path,help='Non-secret M7 config for expected version; no Key read')
+    auto_server.add_argument('--analysis-worker',action='store_true',help='Explicitly start a managed provider worker under configured budgets')
+    auto_server.add_argument('--analysis-notice-id',action='append',type=positive_int,help='Limit managed analysis to selected IDs; repeatable')
     auto_server.add_argument('--featured-model-threshold',choices=['low','normal','high'],default='normal')
     auto_server.add_argument('--featured-rule-threshold',type=int,choices=range(1,5),default=3)
     lan=sub.add_parser('serve-lan-preview',help='Explicit device-allowlisted read proxy; never changes the loopback RSS listener')

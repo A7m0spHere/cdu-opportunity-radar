@@ -73,6 +73,8 @@ class LLMConfig:
     base_url: str
     model: str
     key_env: str = "CDU_LLM_API_KEY"
+    credential_file: str | None = None
+    analysis_mode: str = "legacy"
     temperature: float | None = None
     thinking_mode: str | None = None
     timeout: float = 60
@@ -92,6 +94,10 @@ class LLMConfig:
     cost_currency: str | None = None
 
     def __post_init__(self):
+        if self.analysis_mode not in {'legacy', 'classification_review_v2'}:
+            raise ValueError('Invalid analysis mode')
+        if self.credential_file is not None and (not isinstance(self.credential_file,str) or not Path(self.credential_file).is_absolute()):
+            raise ValueError('Credential reference must be absolute')
         if type(self.capture_failure_diagnostics) is not bool:raise ValueError("Invalid failure capture mode")
         try:
             url = urlsplit(self.base_url)
@@ -175,6 +181,10 @@ class ChatCompletionsProvider:
     def complete(self, messages, validator, *, event_sink=None):
         config = self.config
         key = os.environ.get(config.key_env, "").strip()
+        if not key and config.credential_file:
+            from .credentials import read_key
+            try:key = read_key(config.credential_file)
+            except (ValueError,OSError):raise LLMError("missing_api_key") from None
         if not key: raise LLMError("missing_api_key")
         payload = {"model": config.model, "messages": messages, "stream": False, config.output_token_parameter: config.max_output_tokens}
         if config.temperature is not None and not (config.protocol_profile == "deepseek" and config.thinking_mode == "enabled"): payload["temperature"] = config.temperature

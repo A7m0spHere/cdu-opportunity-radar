@@ -9,5 +9,6 @@ data/
 artifacts/
 .env
 .env.*
+*.dpapi
 *.sqlite*
 *.db

@@ -10,6 +10,7 @@ from .taxonomy import API_V2, query_values, validate_public_v2
 from .featured_api import API_V3, split_query, validate_public_v3
 from .models import InvalidFilter
 from .rss_v1 import ROUTES as RSS_ROUTES, route_path as rss_route, filter_path as rss_filter_path
+from . import review_api
 
 CONTRACT='student-notices-v1'
 PRIVATE=tuple(ipaddress.ip_network(n) for n in ('10.0.0.0/8','172.16.0.0/12','192.168.0.0/16'))
@@ -19,6 +20,8 @@ PUBLIC_ROUTES={
     '/current.xml':'application/rss+xml','/history.xml':'application/rss+xml','/health':'application/json',
 }
 PUBLIC_ROUTES.update({route:'application/rss+xml' for route in RSS_ROUTES})
+PUBLIC_ROUTES.update({route:'application/rss+xml' for route in review_api.RSS_ROUTES})
+PUBLIC_ROUTES[review_api.API_V4]='application/json'
 MAX_BYTES=2*1024*1024
 ITEM_FIELDS={'guid','title','source_name','source_url','source_published_date','summary','category',
              'registration_status','listing','source_checked_at','first_aggregated_at'}
@@ -26,6 +29,12 @@ TOP_FIELDS={'schema_version','items','categories','counts','refreshed_at','data_
 
 
 def public_route(path):
+    if path.partition('?')[0] in {review_api.API_V4,*review_api.RSS_ROUTES}:
+        from .taxonomy import options
+        from .sources import load_sources
+        from .student_page import CATEGORIES
+        review_api.split_query(path,options(load_sources()),list(CATEGORIES))
+        return path.partition('?')[0]
     if rss_route(path) in RSS_ROUTES:
         rss_filter_path(path)
         return rss_route(path)
@@ -67,9 +76,9 @@ def upstream_read(port,path,etag=None):
         if len(body)>MAX_BYTES:raise ValueError('Upstream response exceeds preview limit')
         if response.getheader('X-CDU-Public-Contract')!=CONTRACT:raise ValueError('Unexpected upstream service')
         mime=(response.getheader('Content-Type') or '').split(';',1)[0]
-        if response.status not in ({200,304,400,429,503} if route in {API_V2,API_V3,*RSS_ROUTES} else {200,304,503}):raise ValueError('Unexpected upstream status')
+        if response.status not in ({200,304,400,429,503} if route in {API_V2,API_V3,review_api.API_V4,*RSS_ROUTES,*review_api.RSS_ROUTES} else {200,304,503}):raise ValueError('Unexpected upstream status')
         if response.status==200 and mime!=PUBLIC_ROUTES[route]:raise ValueError('Unexpected upstream content')
-        if response.status==304 and (route not in {'/feed.xml','/current.xml','/history.xml',*RSS_ROUTES} or not etag):
+        if response.status==304 and (route not in {'/feed.xml','/current.xml','/history.xml',*RSS_ROUTES,*review_api.RSS_ROUTES} or not etag):
             raise ValueError('Unexpected conditional response')
         if response.status==200 and path=='/api/notices':
             data=json.loads(body)
@@ -78,6 +87,7 @@ def upstream_read(port,path,etag=None):
                 raise ValueError('Unexpected public JSON fields')
         if response.status==200 and route==API_V2:validate_public_v2(json.loads(body))
         if response.status==200 and route==API_V3:validate_public_v3(json.loads(body))
+        if response.status==200 and route==review_api.API_V4:review_api.validate_public_v4(json.loads(body))
         if response.status==400:return 400,b'Invalid notice filters\n','text/plain; charset=utf-8',None
         return response.status,body,response.getheader('Content-Type'),response.getheader('ETag')
     finally:connection.close()

@@ -14,7 +14,10 @@ from .llm import LLMConfig, LLMError
 
 def _child(sender, config, mock, prescreen, notice, reference_time):
     try:
-        analyzer=AsyncAnalyzer(LLMConfig(**config),mock=mock,prescreen=prescreen)
+        from .review_contract import ReviewAnalyzer
+        cfg=LLMConfig(**config)
+        kind=ReviewAnalyzer if cfg.analysis_mode=='classification_review_v2' else AsyncAnalyzer
+        analyzer=kind(cfg,mock=mock,prescreen=prescreen)
         def event_sink(event):
             # Filter before IPC, too: full provider diagnostics never leave child.
             sender.send(('usage',{'usage':event.get('usage'),'status_code':event.get('status_code')}))
@@ -26,7 +29,7 @@ def _child(sender, config, mock, prescreen, notice, reference_time):
     finally:sender.close()
 
 
-def isolated_run(analyzer, notice, reference_time, on_event, *, target=_child):
+def isolated_run(analyzer, notice, reference_time, on_event, *, target=_child, stop_event=None):
     # spawn avoids inheriting a database/socket, including on Unix. The deadline
     # covers interpreter startup, transport, parsing and evidence validation.
     context=multiprocessing.get_context('spawn')
@@ -36,7 +39,7 @@ def isolated_run(analyzer, notice, reference_time, on_event, *, target=_child):
     deadline=time.monotonic()+analyzer.config.timeout
     try:
         process.start();sender.close()
-        while time.monotonic()<deadline:
+        while time.monotonic()<deadline and not (stop_event is not None and stop_event.is_set()):
             if reader.poll(min(0.1,max(0,deadline-time.monotonic()))):
                 try:kind,value=reader.recv()
                 except EOFError:break
@@ -44,7 +47,7 @@ def isolated_run(analyzer, notice, reference_time, on_event, *, target=_child):
                 elif kind=='result':return value,None
                 elif kind=='error':return None,value
             elif not process.is_alive():break
-        return None,'timeout' if process.is_alive() else 'worker_lost'
+        return None,'worker_lost' if stop_event is not None and stop_event.is_set() else 'timeout' if process.is_alive() else 'worker_lost'
     finally:
         if process.pid is not None:
             if process.is_alive():process.terminate()
@@ -53,12 +56,12 @@ def isolated_run(analyzer, notice, reference_time, on_event, *, target=_child):
         reader.close();sender.close()
 
 
-def run_round(queue, analyzer, *, reference_time, runner=isolated_run):
+def run_round(queue, analyzer, *, reference_time, runner=isolated_run, notice_ids=None):
     if analyzer.config.timeout+5>=queue.policy.lease_seconds:
         raise ValueError('Lease must exceed total task timeout by more than 5 seconds')
-    scan=queue.scan(analyzer);handled=[]
+    scan=queue.scan(analyzer,notice_ids=notice_ids);handled=[]
     for _ in range(queue.policy.batch_limit):
-        claim=queue.claim(analyzer)
+        claim=queue.claim(analyzer,notice_ids=notice_ids)
         if claim is None:break
         claim['config']=analyzer.config
         try:

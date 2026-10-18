@@ -102,6 +102,9 @@ class AsyncAnalyzer:
             return validate(mock_payload(supplied),notice,supplied,self,reference_time)
         return self.provider.complete(messages,lambda p:validate(p,notice,supplied,self,reference_time),event_sink=event_sink)
 
+    def validate(self, payload, notice, supplied, reference_time):
+        return validate(payload, notice, supplied, self, reference_time)
+
 
 def validate(payload, notice, supplied, analyzer, reference_time):
     validate_schema(payload, OUTPUT_SCHEMA)

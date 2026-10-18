@@ -14,10 +14,11 @@ from .taxonomy import API_V2, filter_payload
 from .featured_api import API_V3, project, split_query
 from .featured import FeaturedPolicy, decisions
 from . import rss_v1, subscription_store
+from . import review_api
 
 
 class AutoFeedController(FeedController):
-    paths=('/feed.xml','/current.xml','/history.xml','/api/notices',API_V2,API_V3,*rss_v1.ROUTES)
+    paths=('/feed.xml','/current.xml','/history.xml','/api/notices',API_V2,API_V3,review_api.API_V4,*rss_v1.ROUTES,*review_api.RSS_ROUTES)
     retired_paths=('/approved.xml',)
     state_kind='m4b-auto-rss-state-v1'
     public_contract='student-notices-v1'
@@ -100,6 +101,8 @@ class AutoFeedController(FeedController):
                 return False
 
     def route_path(self,path):
+        if path.partition('?')[0] in {review_api.API_V4,*review_api.RSS_ROUTES}:
+            return path.partition('?')[0]
         if rss_v1.route_path(path) in rss_v1.ROUTES:
             return rss_v1.route_path(path)
         for route in (API_V2,API_V3):
@@ -107,7 +110,36 @@ class AutoFeedController(FeedController):
         return path
 
     def allow_request(self,path,peer):
-        return self.route_path(path) not in rss_v1.ROUTES or self.subscription_budget.allow()
+        return self.route_path(path) not in {*rss_v1.ROUTES,*review_api.RSS_ROUTES} or self.subscription_budget.allow()
+
+    @contextmanager
+    def reviewed_gate(self, snapshot, path):
+        from contextlib import ExitStack
+        from .analysis_store import AnalysisRepository
+        from .storage import Store
+        from .featured import analysis_reader, analysis_for
+        review_api.split_query(path,snapshot.data_v2['filter_options'],snapshot.data_v2['categories'])
+        with ExitStack() as stack:
+            raw=stack.enter_context(self.reader())
+            if raw.feed_plan(self.clock())['plan_hash']!=snapshot.plan_hash:raise ValueError('Source changed during classification')
+            rows={r['canonical_url']:dict(r) for r in raw.db.execute('SELECT * FROM notices')}
+            store=Store.__new__(Store);store.db=raw.db
+            repo=AnalysisRepository.__new__(AnalysisRepository);repo.store=store;repo.db=raw.db
+            analyses={};selected={};queue=None;fault=False
+            if self.analysis_state is not None and self.analysis_analyzer is not None:
+                if self.analysis_analyzer.mock and self.data_mode!='offline_replay':raise ValueError('Mock analysis requires offline replay')
+                try:queue=stack.enter_context(analysis_reader(self.analysis_state,self.db))
+                except ERRORS:fault=True
+            try:
+                for item in snapshot.data_v2['items']:
+                    if queue is None:notice,analysis,state=None,None,'unavailable' if fault else 'not_analyzed'
+                    else:notice,analysis,state=analysis_for(queue,repo,self.analysis_analyzer,rows[item['source_url']]['id'],self.clock())
+                    analyses[item['guid']]=(analysis,state)
+                    selected[item['guid']]=self.featured_policy.decide(notice,analysis,state)
+            except ERRORS:
+                analyses={i['guid']:(None,'unavailable') for i in snapshot.data_v2['items']}
+                selected={i['guid']:self.featured_policy.decide(None,None,'unavailable') for i in snapshot.data_v2['items']}
+            yield review_api.project(snapshot.data_v2,path,rows,analyses,selected,self.featured_policy)
 
     @contextmanager
     def selection_gate(self,snapshot):
@@ -145,6 +177,23 @@ class AutoFeedController(FeedController):
     @contextmanager
     def response_gate(self,snapshot,path):
         route=self.route_path(path)
+        if route in {review_api.API_V4,*review_api.RSS_ROUTES}:
+            with self.reviewed_gate(snapshot,path) as payload:
+                if route==review_api.API_V4:
+                    remaining=max(0,self.max_age-(self.monotonic()-snapshot.validated_at))
+                    body=json.dumps(dict(payload,valid_for_ms=int(remaining*1000),poll_after_ms=5000),ensure_ascii=False,separators=(',',':')).encode('utf-8')
+                    yield Snapshot(body,'',snapshot.plan_hash,snapshot.validated_at)
+                elif route==review_api.RSS_ROUTES[0]:
+                    body=review_api.render_rss(payload,path)
+                    yield Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
+                else:
+                    if not self.subscription_ready:raise ValueError('Featured subscription not initialized')
+                    with self.selection_gate(snapshot) as (token,selected):
+                        with subscription_store.connection(self.subscription_path,self.db) as state:
+                            first=subscription_store.read(state,token,selected,self.clock())
+                            body=review_api.render_rss(payload,path,first)
+                            yield Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
+            return
         if route not in rss_v1.ROUTES:
             yield self.response_snapshot(snapshot,path)
             return
@@ -205,13 +254,13 @@ class AutoFeedController(FeedController):
         return Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
 
     def response_content_type(self, path):
-        return 'application/json; charset=utf-8' if path in {'/api/notices',API_V2,API_V3} else super().response_content_type(path)
+        return 'application/json; charset=utf-8' if path in {'/api/notices',API_V2,API_V3,review_api.API_V4} else super().response_content_type(path)
 
 
 def serve_command(args):
     import ipaddress
     import math
-    controller=None;server=None;collector=None
+    controller=None;server=None;collector=None;analysis_worker=None
     from threading import Event, Thread
     stop=Event()
     try:
@@ -225,11 +274,30 @@ def serve_command(args):
         if analysis_config:
             from .async_cli import configuration
             analysis_analyzer,_=configuration(analysis_config,False)
+        if getattr(args,'analysis_worker',False) and not analysis_config:
+            raise ValueError('Managed analysis worker requires state and config')
         policy=FeaturedPolicy(model_threshold=getattr(args,'featured_model_threshold','normal'),rule_threshold=getattr(args,'featured_rule_threshold',3))
         controller=AutoFeedController(args.db,args.state_dir,max_age=args.max_age,analysis_state=analysis_state,
             analysis_analyzer=analysis_analyzer,featured_policy=policy)
         server=make_server(controller,args.bind,args.port)
         controller.start(args.interval)
+        if getattr(args,'analysis_worker',False):
+            from .async_queue import JobQueue
+            from .async_worker import run_round,isolated_run
+            from .analysis_models import reference_datetime
+            _,queue_policy=configuration(analysis_config,False)
+            def review_work():
+                while not stop.is_set():
+                    try:
+                        with JobQueue(analysis_state,args.db,policy=queue_policy) as queue:
+                            result=run_round(queue,analysis_analyzer,reference_time=reference_datetime(),
+                                notice_ids=getattr(args,'analysis_notice_id',None),
+                                runner=lambda a,n,t,e:isolated_run(a,n,t,e,stop_event=stop))
+                        controller.wakeup.set()
+                        if any(item.get('error') in {'authentication','forbidden','missing_api_key','http_error'} for item in result['handled']):return
+                    except ERRORS:LOG.warning('Classification worker unavailable')
+                    if stop.wait(60):break
+            analysis_worker=Thread(target=review_work,name='classification-worker',daemon=True);analysis_worker.start()
         if args.collect_interval:
             from .recheck import collect_cycle, initialize as initialize_rechecks
             from .http import Fetcher
@@ -268,4 +336,5 @@ def serve_command(args):
         stop.set()
         if server:server.server_close()
         if collector:collector.join(timeout=30)
+        if analysis_worker is not None:analysis_worker.join(timeout=5)
         if controller:controller.close()

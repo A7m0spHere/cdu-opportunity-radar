@@ -12,7 +12,7 @@ import sqlite3
 import time
 import uuid
 
-from .analysis_models import fingerprint
+from .analysis_models import fingerprint, reference_datetime
 from .llm import LLMError, usage_values
 from .llm_workflow import readonly_repository
 
@@ -129,21 +129,31 @@ class JobQueue:
             self.db.rollback();raise
         else:self.db.commit()
 
-    def scan(self, analyzer):
+    def scan(self, analyzer, notice_ids=None):
         self.ensure_source()
+        if notice_ids is not None:
+            notice_ids=sorted(set(notice_ids))
+            if not notice_ids or len(notice_ids)>self.policy.scan_limit or any(type(i) is not int or i<=0 for i in notice_ids):
+                raise ValueError('Invalid bounded notice selection')
         # A cursor per pipeline means a new prompt/config starts its own bounded sweep.
         key='cursor:'+analyzer.version
         cursor=self.db.execute('SELECT value FROM metadata WHERE key=?',(key,)).fetchone()
         cursor=int(cursor[0]) if cursor else 0
         with source_snapshot(self.raw_path) as repo:
-            ids=[r[0] for r in repo.db.execute('SELECT id FROM notices WHERE id>? ORDER BY id LIMIT ?',
-                                             (cursor,self.policy.scan_limit))]
+            if notice_ids is None:
+                ids=[r[0] for r in repo.db.execute('SELECT id FROM notices WHERE id>? ORDER BY id LIMIT ?',
+                                                 (cursor,self.policy.scan_limit))]
+            else:
+                ids=[r[0] for r in repo.db.execute('SELECT id FROM notices WHERE id IN ('+','.join('?' for _ in notice_ids)+') ORDER BY id',notice_ids)]
+                if ids!=notice_ids:raise ValueError('Selected notice does not exist')
             notices=[];invalid=[]
             for ident in ids:
                 try:notices.append(repo.input(ident))
                 except (ValueError,TypeError):invalid.append(ident)
         now=self.clock();inserted=0
         with self.transaction():
+            self.db.execute('INSERT OR REPLACE INTO metadata VALUES (?,?)',
+                ('model_identity:'+analyzer.version,fingerprint([analyzer.config.identity(),analyzer.prompt_version,analyzer.schema_version,'offline_mock' if analyzer.mock else 'provider'])))
             for ident in invalid:
                 self.db.execute('''INSERT INTO input_failures VALUES (?,?,'invalid_input',?,NULL)
                     ON CONFLICT(notice_id,pipeline_version) DO UPDATE SET
@@ -173,16 +183,45 @@ class JobQueue:
                             from .async_contract import validate
                             supplied,_=analyzer.prepare(notice)
                             from .analysis_models import reference_datetime
-                            checked=validate(json.loads(existing['result'])['proposal'],notice,supplied,analyzer,reference_datetime(None))
+                            checked=analyzer.validate(json.loads(existing['result'])['proposal'],notice,supplied,reference_datetime(None))
                             state=checked['state']
                             restored=json.dumps(checked,ensure_ascii=False)
                         except (ValueError,KeyError,TypeError):pass
                     self.db.execute('UPDATE jobs SET state=?,error=?,updated_at=?,next_at=?,result=? WHERE id=?',
                         (state,reason,now,now,restored,existing['id']))
-            next_cursor=ids[-1] if len(ids)==self.policy.scan_limit else 0
-            self.db.execute('INSERT INTO metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(next_cursor)))
+            next_cursor=ids[-1] if notice_ids is None and len(ids)==self.policy.scan_limit else 0
+            if notice_ids is None:self.db.execute('INSERT INTO metadata VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',(key,str(next_cursor)))
             self.db.execute("INSERT INTO metadata VALUES ('active_pipeline',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",(analyzer.version,))
         return {'scanned':len(ids),'invalid_inputs':len(invalid),'enqueued':inserted,'cursor':next_cursor,'model_requests':0}
+
+    def revalidate(self, analyzer, notice_ids, from_pipeline):
+        """Explicit local revalidation; same input, prompt, schema and provider identity only."""
+        if from_pipeline==analyzer.version:raise ValueError('Select a previous pipeline')
+        identity=fingerprint([analyzer.config.identity(),analyzer.prompt_version,analyzer.schema_version,'offline_mock' if analyzer.mock else 'provider'])
+        old=self.db.execute('SELECT value FROM metadata WHERE key=?',('model_identity:'+from_pipeline,)).fetchone()
+        if not old or old[0]!=identity:raise ValueError('Model or prompt identity changed; cached proposals cannot be reused')
+        self.scan(analyzer,notice_ids=notice_ids)
+        handled=[]
+        with source_snapshot(self.raw_path) as repo:
+            for ident in sorted(set(notice_ids)):
+                notice=repo.input(ident)
+                old=self.db.execute('SELECT * FROM jobs WHERE notice_id=? AND input_hash=? AND pipeline_version=?',
+                    (ident,notice.input_hash,from_pipeline)).fetchone()
+                if not old:handled.append({'notice_id':ident,'state':'not_available'});continue
+                state='failed';result=None;error=old['error']
+                if old['state'] in {'succeeded','partial'} and old['result']:
+                    try:
+                        supplied,_=analyzer.prepare(notice)
+                        result=analyzer.validate(json.loads(old['result'])['proposal'],notice,supplied,reference_datetime())
+                        result['revalidated_from']={'job_id':old['id'],'pipeline_version':from_pipeline}
+                        state=result['state'];error=None
+                    except (ValueError,KeyError,TypeError):error='schema_validation'
+                elif old['state']!='failed':handled.append({'notice_id':ident,'state':'not_available'});continue
+                with self.transaction():
+                    self.db.execute("UPDATE jobs SET state=?,result=?,error=?,updated_at=? WHERE notice_id=? AND input_hash=? AND pipeline_version=? AND state='queued'",
+                        (state,json.dumps(result,ensure_ascii=False) if result else None,error,self.clock(),ident,notice.input_hash,analyzer.version))
+                handled.append({'notice_id':ident,'state':state})
+        return {'revalidated':handled,'model_requests':0,'from_pipeline':from_pipeline,'pipeline_version':analyzer.version}
 
     def _fail(self, job, error, now):
         retry=error in RETRYABLE and job['attempts']<self.policy.max_attempts
@@ -195,12 +234,15 @@ class JobQueue:
             self.db.execute("UPDATE attempts SET state='unknown',error='worker_lost',finished_at=? WHERE job_id=? AND ordinal=? AND state='reserved'",(now,job['id'],job['attempts']))
             self._fail(job,'worker_lost',now)
 
-    def claim(self, analyzer):
+    def claim(self, analyzer, notice_ids=None):
         now=self.clock()
+        selection='';params=[analyzer.version,now]
+        if notice_ids is not None:
+            if not notice_ids or any(type(i) is not int or i<=0 for i in notice_ids):raise ValueError('Invalid notice selection')
+            selection=' AND notice_id IN ('+','.join('?' for _ in notice_ids)+')';params.extend(notice_ids)
         with self.transaction():
             self.recover(now)
-            job=self.db.execute("SELECT * FROM jobs WHERE pipeline_version=? AND state IN ('queued','retry_wait','budget_blocked') AND next_at<=? ORDER BY next_at,id LIMIT 1",
-                                (analyzer.version,now)).fetchone()
+            job=self.db.execute("SELECT * FROM jobs WHERE pipeline_version=? AND state IN ('queued','retry_wait','budget_blocked') AND next_at<=?"+selection+" ORDER BY next_at,id LIMIT 1",params).fetchone()
             if not job:return None
             if job['attempts']>=self.policy.max_attempts:
                 self.db.execute("UPDATE jobs SET state='failed',updated_at=? WHERE id=?",(now,job['id']))

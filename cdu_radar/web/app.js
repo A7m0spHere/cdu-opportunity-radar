@@ -6,7 +6,8 @@ const selectionButtons = [...document.querySelectorAll("[data-selection]")];
 const statuses = {possible: "可能仍可参与", closed: "报名已截止", unknown: "报名状态未确认"};
 const labels = {all: "最新通知", current: "当前机会", history: "历史信息"};
 let data = null, view = "all", selection = "all", pollTimer, expiryTimer, requestController, generation = 0;
-const filterControls = {source: "publisher", type: "information-type", topic: "topic", status: "registration-status", published: "date-presence", from: "date-from", to: "date-to", category: "category"};
+const expandedClassifications = new Set(), expandedFeatured = new Set();
+const filterControls = {source: "publisher", type: "information-type", domain: "domain", topic: "topic", status: "registration-status", published: "date-presence", from: "date-from", to: "date-to"};
 const subscriptionHelp = "订阅最多返回最新 100 条；精选分析尚未就绪时会暂不可用。链接仅在当前服务运行且可访问时有效。";
 
 function queryPath() {
@@ -16,14 +17,14 @@ function queryPath() {
     const value = $(id).value;
     if (value && value !== "all") params.set(key, value);
   }
-  return "/api/notices/v3" + (params.size ? "?" + params.toString() : "");
+  return "/api/notices/v4" + (params.size ? "?" + params.toString() : "");
 }
 
 function populateFilters(payload) {
-  for (const [key,id,label] of [["sources","publisher","全部来源"],["types","information-type","全部类型"],["topics","topic","全部主题"]]) {
+  for (const [key,id,label] of [["sources","publisher","全部来源"],["types","information-type","全部类型"],["domains","domain","全部领域"],["topics","topic","全部学科"]]) {
     const selected = $(id).value;
     const values = [{id: "all", label}, ...payload.filter_options[key]];
-    if (key === "topics") values.push({id: "unclassified", label: "主题未分类"});
+    if (key === "topics" || key === "domains") values.push({id: "unclassified", label: "未分类"});
     $(id).replaceChildren(...values.map((v) => Object.assign(document.createElement("option"), {value: v.id, textContent: v.label})));
     if (values.some((v) => v.id === selected)) $(id).value = selected;
   }
@@ -44,14 +45,14 @@ function sourceUrl(value) {
 }
 
 function validate(payload) {
-  if (payload.schema_version !== 3 || payload.taxonomy_version !== 1 || !payload.filter_options ||
-      !["sources","types","topics"].every((key) => Array.isArray(payload.filter_options[key]) && payload.filter_options[key].every((v) => typeof v.id === "string" && typeof v.label === "string")) ||
+  if (payload.schema_version !== 4 || payload.taxonomy_version !== 2 || !payload.filter_options || !payload.classification_review ||
+      !["sources","types","topics","domains"].every((key) => Array.isArray(payload.filter_options[key]) && payload.filter_options[key].every((v) => typeof v.id === "string" && typeof v.label === "string")) ||
       !Array.isArray(payload.items) || !Array.isArray(payload.categories) ||
       !Number.isFinite(payload.valid_for_ms) || payload.valid_for_ms <= 0 || payload.valid_for_ms > 3600000 ||
       !["live", "offline_replay"].includes(payload.data_mode) || !payload.refreshed_at) throw new Error("Invalid response");
-  if (!payload.featured || !["pending","degraded","ready"].includes(payload.featured.state) || !payload.featured.coverage || payload.subscription?.available !== true || typeof payload.subscription.url !== "string" || !/^\/rss\/v1\/(all|featured)\.xml(\?|$)/.test(payload.subscription.url)) throw new Error("Invalid featured response");
+  if (!payload.featured || !["pending","degraded","ready"].includes(payload.featured.state) || !payload.featured.coverage || payload.subscription?.available !== true || typeof payload.subscription.url !== "string" || !/^\/rss\/v2\/(all|featured)\.xml(\?|$)/.test(payload.subscription.url)) throw new Error("Invalid featured response");
   const subscription = new URL(payload.subscription.url, location.origin);
-  if (subscription.origin !== location.origin || subscription.hash || !["/rss/v1/all.xml", "/rss/v1/featured.xml"].includes(subscription.pathname)) throw new Error("Invalid subscription");
+  if (subscription.origin !== location.origin || subscription.hash || !["/rss/v2/all.xml", "/rss/v2/featured.xml"].includes(subscription.pathname)) throw new Error("Invalid subscription");
   if (!payload.featured.ranges || !["current","history"].every((key) => payload.featured.ranges[key]?.coverage && ["pending","degraded","ready"].includes(payload.featured.ranges[key].state))) throw new Error("Invalid range state");
   const guids = new Set(), urls = new Set();
   payload.items = payload.items.filter((item) => {
@@ -64,10 +65,13 @@ function validate(payload) {
     const f = item.featured;
     if (!f || !["selected","not_selected","pending"].includes(f.decision) || !Array.isArray(f.evidence) || !Array.isArray(f.uncertainties) || f.evidence.some((e) => typeof e.label !== "string" || typeof e.quote !== "string")) throw new Error("Invalid featured item");
     const c = item.classification;
-    if (!c || c.version !== 1 || c.method !== "rules" || c.model_state !== "not_analyzed" ||
+    if (!c || c.version !== 2 || !["rules", "llm_reviewed"].includes(c.method) || !["not_analyzed", "reviewed"].includes(c.model_state) ||
+        !Array.isArray(c.domains) || !c.domains.every((d) => payload.filter_options.domains.some((o) => o.id === d)) ||
         !payload.filter_options.types.some((t) => t.id === c.type) || !Array.isArray(c.topics) ||
         !c.topics.every((t) => payload.filter_options.topics.some((o) => o.id === t)) ||
         !payload.filter_options.sources.some((s) => s.id === item.publisher_id) || !Array.isArray(item.discovery_source_ids)) throw new Error("Invalid classification");
+    const review = item.classification_review;
+    if (!review || !["not_analyzed", "pending", "reviewed", "uncertain", "failed", "stale"].includes(review.state) || !review.rule || !Array.isArray(review.evidence) || typeof review.changed !== "boolean" || review.evidence.some((e) => typeof e.quote !== "string")) throw new Error("Invalid classification review");
     if (guids.has(item.guid) || urls.has(item.source_url)) return false;
     guids.add(item.guid); urls.add(item.source_url); return true;
   });
@@ -93,6 +97,7 @@ function clearData() {
   $("collected-at").textContent = $("refreshed-at").textContent = "—";
   $("replay-note").hidden = true;
   $("featured-state").hidden = true;
+  $("review-state").hidden = true;
   document.querySelectorAll("[data-count]").forEach((node) => { node.textContent = "—"; });
   $("source-list").replaceChildren(Object.assign(document.createElement("li"), {textContent: "当前未获取到可核验数据"}));
 }
@@ -125,15 +130,34 @@ function card(item) {
     time.append(day, year);
     time.setAttribute("aria-label", item.source_published_date);
   } else time.textContent = "日期未提供";
-  find(".category-tag").textContent = item.category;
   find(".type-tag").textContent = data.filter_options.types.find((t) => t.id === item.classification.type)?.label || "未分类";
-  find(".topic-tags").textContent = item.classification.topics.map((id) => data.filter_options.topics.find((t) => t.id === id)?.label).join(" · ") || "主题未分类";
+  find(".domain-tags").textContent = item.classification.domains.map((id) => data.filter_options.domains.find((t) => t.id === id)?.label).filter(Boolean).join(" · ");
+  find(".topic-tags").textContent = item.classification.topics.map((id) => data.filter_options.topics.find((t) => t.id === id)?.label).filter(Boolean).join(" · ");
   find(".history-tag").hidden = item.listing !== "history";
+  find(".status-tag").hidden = item.registration_status === "unknown";
   find(".status-tag").textContent = statuses[item.registration_status];
   find(".status-tag").dataset.state = item.registration_status;
   find(".notice-title").textContent = item.title;
   find(".source-name").textContent = "官方来源 · " + item.source_name;
   find(".summary").textContent = item.summary;
+  const review = item.classification_review;
+  const reviewLabels = {not_analyzed: "规则初分", pending: "等待模型复核", reviewed: review.changed ? "模型已纠正" : "模型已复核", uncertain: "复核依据不足", failed: "模型复核暂不可用", stale: "等待重新复核"};
+  find(".classification-label").textContent = "分类依据 · " + reviewLabels[review.state];
+  const describe = (c) => [data.filter_options.types.find((t) => t.id === c.type)?.label || "未分类", ...c.domains.map((id) => data.filter_options.domains.find((d) => d.id === id)?.label), ...c.topics.map((id) => data.filter_options.topics.find((t) => t.id === id)?.label)].filter(Boolean).join(" · ");
+  find(".classification-basis").textContent = "规则初分：" + describe(review.rule) + (review.state === "reviewed" ? "；模型复核：" + describe(item.classification) : "");
+  find(".classification-note").textContent = review.reason || "当前使用规则分类，模型未完成有效复核；分类仅供浏览。";
+  find(".classification-evidence").replaceChildren(...review.evidence.map((e) => Object.assign(document.createElement("li"), {textContent: "原文依据：“" + e.quote + "”"})));
+  for (const [selector, expanded] of [[".classification-reason", expandedClassifications], [".featured-reason", expandedFeatured]]) {
+    const detail = find(selector);
+    detail.open = expanded.has(item.guid);
+    detail.querySelector("summary").addEventListener("click", () => {
+      if (detail.open) expanded.delete(item.guid); else expanded.add(item.guid);
+    });
+    detail.addEventListener("toggle", () => {
+      if (!detail.isConnected) return;
+      if (detail.open) expanded.add(item.guid); else expanded.delete(item.guid);
+    });
+  }
   if (item.featured.decision === "selected") {
     find(".featured-reason").hidden = false;
     find(".featured-basis").textContent = "入选依据：" + item.featured.evidence.map((e) => e.label).join("、");
@@ -172,10 +196,23 @@ function render() {
       "精选按重要性建议与原文依据入选，与“当前机会”分别判断；个人相关性由下方筛选控制。";
   const count = (scope) => data.items.filter((item) => scope === "all" || item.listing === scope).length;
   document.querySelectorAll("[data-count]").forEach((node) => { node.textContent = count(node.dataset.count); });
-  const category = $("category").value;
-  const items = data.items.filter((item) => (view === "all" || item.listing === view) && (category === "all" || item.category === category));
+  const items = data.items.filter((item) => view === "all" || item.listing === view);
+  const reviewed = items.filter((item) => item.classification_review.state === "reviewed");
+  const corrected = reviewed.filter((item) => item.classification_review.changed).length;
+  const failed = items.filter((item) => item.classification_review.state === "failed").length;
+  const uncertain = items.filter((item) => item.classification_review.state === "uncertain").length;
+  const pending = items.length - reviewed.length - failed - uncertain;
+  $("review-state").hidden = false;
+  $("review-state").textContent = "模型复核 " + reviewed.length + " / " + items.length + " · 已纠正 " + corrected + (pending ? " · 待复核 " + pending : "") + (uncertain ? " · 依据不足 " + uncertain : "") + (failed ? " · 暂不可用 " + failed : "") + "。未完成复核的信息使用规则分类。";
   $("result-count").textContent = items.length + " 条信息";
+  const detailSelectors = [".classification-reason", ".featured-reason"];
+  const active = document.activeElement;
+  const focusedGuid = active?.closest("article.notice-card")?.dataset.guid;
+  const focusedSummary = detailSelectors.find((selector) => active?.matches(selector + " > summary"));
   $("notice-list").replaceChildren(...items.map(card));
+  for (const node of $("notice-list").children) {
+    if (node.dataset.guid === focusedGuid && focusedSummary) node.querySelector(focusedSummary + " > summary").focus({preventScroll: true});
+  }
   $("message").hidden = items.length > 0;
   if (!items.length) {
     if (selection === "featured" && featured.state === "degraded") message("degraded", "智能精选暂时降级", "当前没有可展示的已核验精选；这不表示没有重要通知。请切换“全部信息”查看官方通知。");
@@ -222,6 +259,7 @@ async function refresh() {
     pollTimer = setTimeout(refresh, Math.max(100, Math.min(5000, remaining / 2)));
   } catch (error) {
     if (ticket !== generation || document.hidden) return;
+    console.warn("Notice page refresh failed", error.name, error.stack);
     unavailable(error.message === "Invalid filters" ? "筛选条件无效，请调整日期或重置筛选。" : undefined);
     pollTimer = setTimeout(refresh, 5000);
   } finally {

@@ -21,11 +21,14 @@ location = /favicon.svg { include gateway-upstream.inc; }
 location = /api/notices { include gateway-upstream.inc; }
 location = /api/notices/v2 { include gateway-upstream.inc; }
 location = /api/notices/v3 { include gateway-upstream.inc; }
+location = /api/notices/v4 { include gateway-upstream.inc; }
 location = /feed.xml { include gateway-upstream.inc; }
 location = /current.xml { include gateway-upstream.inc; }
 location = /history.xml { include gateway-upstream.inc; }
 location = /rss/v1/all.xml { include gateway-upstream.inc; }
 location = /rss/v1/featured.xml { include gateway-upstream.inc; }
+location = /rss/v2/all.xml { include gateway-upstream.inc; }
+location = /rss/v2/featured.xml { include gateway-upstream.inc; }
 location = /approved.xml { include gateway-upstream.inc; }
 location = /health { include gateway-upstream.inc; }
 location / { return 404; }

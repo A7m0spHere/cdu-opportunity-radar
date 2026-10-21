@@ -109,11 +109,18 @@ def render_rss(payload,path,first_featured=None):
     body=rss_v1.render(base,route,collection=collection,first_featured=first_featured)
     root=ET.fromstring(body);channel=root.find('channel')
     channel.find('{'+rss_v1.NS+'}canonical_path').text=payload['subscription']['url']
+    if featured:
+        # Selection rendering sees selected items only. Preserve the coverage
+        # of the full filtered cohort so consumers cannot mistake it for complete.
+        import json
+        channel.find('{'+rss_v1.NS+'}analysis_state').text=payload['featured']['state']
+        channel.find('{'+rss_v1.NS+'}coverage').text=json.dumps(payload['featured']['coverage'],sort_keys=True,separators=(',',':'))
     by_guid={i['guid']:i for i in payload['items']}
     for item in channel.findall('item'):
         entry=by_guid[item.findtext('guid')]
         for name,value in [('type',entry['classification']['type']),('domains',','.join(entry['classification']['domains'])),
-                           ('topics',','.join(entry['classification']['topics'])),('classification_state',entry['classification_review']['state'])]:
+                           ('topics',','.join(entry['classification']['topics'])),('classification_state',entry['classification_review']['state']),
+                           ('undergraduate_state',entry['undergraduate']['state'])]:
             ET.SubElement(item,'{urn:cdu-radar:rss:v2}'+name).text=value
     result=ET.tostring(root,encoding='utf-8',xml_declaration=True)
     if len(result)>rss_v1.MAX_BYTES:raise ValueError('RSS exceeds byte limit')

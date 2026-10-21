@@ -24,7 +24,7 @@ def main():
         assert files('cdu_radar').joinpath(name).read_bytes()
     assert load_sources()
     with tempfile.TemporaryDirectory() as directory:
-        for command in ([], ['serve-rss'], ['quality-report'], ['source-coverage'], ['analysis-queue'], ['featured-benchmark']):
+        for command in ([], ['serve-rss'], ['quality-report'], ['source-coverage'], ['analysis-queue'], ['featured-benchmark'], ['rss-consumer'], ['quality-benchmark']):
             result = subprocess.run([sys.executable,'-I','-m','cdu_radar',*command,'--help'],
                                     cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
             assert (command[0] if command else 'serve-rss') in result.stdout
@@ -72,6 +72,16 @@ def main():
             '--dataset',str(dataset/'dataset.json'),'--db',str(mock_db),'--split','all'],
             cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
         assert json.loads(result.stdout)['summary']['full_benchmark_metrics'] is None
+        quality=Path(directory)/'quality-benchmark'
+        result=subprocess.run([sys.executable,'-I','-m','cdu_radar','quality-benchmark','export',
+            '--db',str(mock_db),'--directory',str(quality),'--as-of',reference_datetime().isoformat()],
+            cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
+        assert json.loads(result.stdout)['sampled']==1 and (quality/'review-labels.csv').is_file()
+        result=subprocess.run([sys.executable,'-I','-m','cdu_radar','quality-benchmark','evaluate',
+            '--db',str(mock_db),'--directory',str(quality),'--split','all','--output',str(quality/'report.json')],
+            cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
+        assert json.loads(result.stdout)['human_labeled_samples']==0
+        assert json.loads(result.stdout)['undergraduate']['full_cohort_metrics'] is None
         from cdu_radar.auto_service import AutoFeedController
         from cdu_radar.featured_api import API_V3, validate_public_v3
         from cdu_radar.rss_service import make_server
@@ -108,6 +118,16 @@ def main():
                     assert response.status==expected and response.getheader('Cache-Control')=='no-store, max-age=0'
                     if expected==200:assert ET.fromstring(body).tag=='rss'
                 finally:connection.close()
+            consumer_config=Path(directory)/'consumer.json'
+            consumer_config.write_text(json.dumps({'schema_version':1,'subscriptions':[
+                {'name':'synthetic','url':f'http://127.0.0.1:{server.server_address[1]}/rss/v2/all.xml?audience=undergraduate'}]}),encoding='utf-8')
+            result=subprocess.run([sys.executable,'-I','-m','cdu_radar','rss-consumer','poll',
+                '--config',str(consumer_config),'--state-db',str(Path(directory)/'consumer.sqlite3'),
+                '--directory',str(Path(directory)/'consumer-output')],cwd=directory,check=True,
+                capture_output=True,text=True,encoding='utf-8')
+            consumer_report=json.loads(result.stdout)
+            assert consumer_report['subscriptions'][0]['status']=='initialized' and not consumer_report['subscriptions'][0]['drafts']
+            assert consumer_report['qq_deliveries']==consumer_report['model_requests']==0
         finally:
             if worker.is_alive():server.shutdown();worker.join(3)
             server.server_close();controller.close()

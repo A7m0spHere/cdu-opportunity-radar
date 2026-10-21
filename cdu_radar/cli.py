@@ -30,6 +30,10 @@ def main(argv=None) -> int:
     register_async_queue(sub)
     from .featured_cli import register as register_featured
     register_featured(sub)
+    from .consumer_cli import register as register_consumer
+    register_consumer(sub)
+    from .quality_benchmark_cli import register as register_quality_benchmark
+    register_quality_benchmark(sub)
     listing = sub.add_parser("sources", help="Show catalog and current SQLite state")
     collection = sub.add_parser("collect", help="Collect bounded official pages, no publishing")
     export = sub.add_parser("export-rss", help="Legacy technical diagnostic export; use serve-rss for automatic aggregation")
@@ -159,6 +163,12 @@ def main(argv=None) -> int:
         command.add_argument("--as-of")
         command.add_argument("--overwrite", action="store_true", help="Explicitly replace JSON report")
     args = parser.parse_args(argv)
+    if args.command=='rss-consumer':
+        from .consumer_cli import command as consumer_command
+        return consumer_command(args)
+    if args.command=='quality-benchmark':
+        from .quality_benchmark_cli import command as quality_benchmark_command
+        return quality_benchmark_command(args)
     if args.command=='featured-benchmark':
         from .featured_cli import command as featured_command
         return featured_command(args)

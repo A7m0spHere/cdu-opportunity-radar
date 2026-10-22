@@ -40,7 +40,7 @@ class ReviewAnalyzer(AsyncAnalyzer):
     def __init__(self, config, **kwargs):
         super().__init__(config, **kwargs)
         self.prompt_version, self.schema_version = PROMPT_VERSION, SCHEMA_VERSION
-        modules = ['classification.py','review_contract.py','llm.py','evidence.py','privacy.py']
+        modules = ['classification.py','review_contract.py','llm.py','tls.py','evidence.py','privacy.py']
         code = [files('cdu_radar').joinpath(p).read_text('utf-8').replace('\r\n','\n') for p in modules]
         self.rule_version = policy_version() + ':' + fingerprint(code)[:16]
         self.version = 'review-v2:' + fingerprint([config.identity(), SYSTEM_PROMPT, OUTPUT_SCHEMA,
@@ -68,7 +68,7 @@ class ReviewAnalyzer(AsyncAnalyzer):
             return self.validate(mock_payload(supplied), notice, supplied, reference_time)
         return self.provider.complete(messages, lambda p:self.validate(p,notice,supplied,reference_time), event_sink=event_sink)
 
-    def validate(self, payload, notice, supplied, reference_time):
+    def validate(self, payload, notice, supplied, reference_time, *, semantic=False):
         validate_schema(payload, OUTPUT_SCHEMA)
         c = payload['classification']; evidence = c['evidence']; issues=[]; kept=[]
         if len(evidence)>24 or not 0<len(c['reason'])<=600:
@@ -89,10 +89,10 @@ class ReviewAnalyzer(AsyncAnalyzer):
                 if field=='domain':
                     from .evidence import contexts
                     context='\n'.join(contexts(supplied,quote))
-                ok=(type_supported(value,quote) if field=='type' else
+                ok=(True if semantic else type_supported(value,quote) if field=='type' else
                     bool(re.search(DOMAIN_PATTERNS[value],context)) if field=='domain' else topic_supported(value,quote))
                 # Do not turn a clearly ordinary teaching notice into an activity.
-                if field=='type' and value in {'event','competition','research'} and classify(notice.title,notice.content)['type']=='notice':
+                if not semantic and field=='type' and value in {'event','competition','research'} and classify(notice.title,notice.content)['type']=='notice':
                     ok=False
                 if ok:
                     kept.append(dict(e));return True

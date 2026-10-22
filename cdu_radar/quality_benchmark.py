@@ -52,6 +52,11 @@ def export_package(raw_db, directory, *, reference_time, limit=50, seed='m10-qua
             base=classify(n.title,n.content)
             effective=review({},dict(title=n.title,content=n.content),analysis,state)
             importance=analysis['importance']['level'] if analysis else 'unknown'
+            model_featured=(LEVELS[importance]>=LEVELS[policy.settings['model_threshold']] if importance in LEVELS else None)
+            if analysis and 'featured_selection_valid' in analysis:
+                selection=analysis.get('featured_selection',{})
+                model_featured=(selection.get('decision')=='selected' if analysis.get('featured_selection_valid')
+                                and selection.get('decision') in {'selected','not_selected'} else None)
             decision=policy.decide(n,analysis,state)
             # Explicitly a simple rule baseline, separate from model+rule production selection.
             supported=[k for k,(_,weight,pattern) in CRITERIA.items() if weight>=policy.settings['rule_threshold']
@@ -60,10 +65,12 @@ def export_package(raw_db, directory, *, reference_time, limit=50, seed='m10-qua
             predictions.append(dict(sample_id=r['sample_id'],input_hash=r['input_hash'],state=state,
                 rule=dict(classification=base,featured=bool(supported),criteria=supported),
                 model=dict(classification=analysis['classification'] if analysis and analysis.get('classification_valid') else None,
-                    featured=LEVELS[importance]>=LEVELS[policy.settings['model_threshold']] if importance in LEVELS else None),
+                    featured=model_featured),
                 effective=dict(classification=effective['classification'],review_state=effective['classification_review']['state'],
                     featured=decision['decision']=='selected',decision=decision['decision']),
-                undergraduate=effective['undergraduate'],action_basis=True if action_quotes else None,action_evidence=action_quotes[:3],
+                undergraduate=effective['undergraduate'],
+                action_basis=(analysis['action_basis'] if analysis and analysis.get('action_valid') else True if action_quotes else None),
+                action_evidence=(analysis['action_evidence'] if analysis and analysis.get('action_valid') else action_quotes[:3]),
                 registration_status=by_id[r['sample_id']]['registration_status'],listing=by_id[r['sample_id']]['listing']))
     manifest=dict(schema_version=1,guideline_version=GUIDELINE,dataset_id=data['dataset_id'],
         reference_time=data['reference_time'],classification_version=policy_version(),importance_version=policy.version,
@@ -90,13 +97,16 @@ def export_package(raw_db, directory, *, reference_time, limit=50, seed='m10-qua
                 reference_time=data['reference_time'],directory=str(directory))
 
 
-def load_package(directory):
+def load_package(directory, *, require_current=True):
     directory=Path(directory);data=load_dataset(directory/'dataset.json')
     from .llm_json import strict_json
     manifest=strict_json((directory/'predictions.json').read_bytes())
     if (manifest.get('schema_version')!=1 or manifest.get('guideline_version')!=GUIDELINE
             or manifest.get('dataset_id')!=data['dataset_id'] or manifest.get('benchmark_id')!='quality-benchmark:'+fingerprint({k:v for k,v in manifest.items() if k!='benchmark_id'})
-            or manifest['implementation_version']!=implementation_version() or manifest['classification_version']!=policy_version()
+            ):
+        raise ValueError('Frozen quality package was changed')
+    if require_current and (manifest['implementation_version']!=implementation_version()
+            or manifest['classification_version']!=policy_version()
             or manifest['importance_version']!=FeaturedPolicy().version):
         raise ValueError('Frozen quality package/version changed; export a new revision')
     if {p['sample_id'] for p in manifest['predictions']}!={r['sample_id'] for r in data['records']}:
@@ -113,7 +123,7 @@ def check_quote(text, record, *, required=False):
 
 
 def import_labels(directory, input_path, labels_db, *, labeler, allow_synthetic=False):
-    data,manifest=load_package(directory);by_id={r['sample_id']:r for r in data['records']}
+    data,manifest=load_package(directory,require_current=False);by_id={r['sample_id']:r for r in data['records']}
     if not isinstance(labeler,str) or not 1<=len(labeler.strip())<=100:raise ValueError('Labeler required')
     prepared=[];seen=set()
     with Path(input_path).open(encoding='utf-8-sig',newline='') as f:
@@ -165,6 +175,35 @@ def import_labels(directory, input_path, labels_db, *, labeler, allow_synthetic=
             db.execute('INSERT INTO quality_labels(benchmark_id,sample_id,input_hash,labeler,payload) VALUES (?,?,?,?,?)',
                 (manifest['benchmark_id'],ident,input_hash,labeler,payload));inserted+=1
     return dict(imported=inserted,source_writes=0,old_labels_imported=0)
+
+
+def rebase_labels(old_directory, new_directory, input_path, output):
+    """Carry existing human answers only across exactly identical frozen inputs.
+
+    Prediction/policy revisions get a new benchmark identity. Human truth does
+    not change with the model; no label is guessed or corrected here.
+    """
+    old,_=load_package(old_directory,require_current=False)
+    new,_=load_package(new_directory)
+    previous={r['sample_id']:r for r in old['records']};current={r['sample_id']:r for r in new['records']}
+    if (old['reference_time']!=new['reference_time'] or set(previous)!=set(current)
+            or any(previous[key]!=current[key] for key in previous)):
+        raise ValueError('Rebase requires identical frozen records, evidence, splits and reference time')
+    output_rows=[];seen=set()
+    with Path(input_path).open(encoding='utf-8-sig',newline='') as stream:
+        reader=csv.DictReader(stream)
+        if reader.fieldnames!=COLUMNS:raise ValueError('Unexpected rebase worksheet')
+        for row in reader:
+            ident=row.get('sample_id')
+            if ident in seen or ident not in previous or None in row or any(v is None for v in row.values()):
+                raise ValueError('Invalid rebase row')
+            seen.add(ident)
+            if any(row[key]!=worksheet(previous[ident],old)[key] for key in IDENTITY):
+                raise ValueError('Old human worksheet identity changed')
+            output_rows.append({**worksheet(current[ident],new),**{key:row[key] for key in MANUAL+EXTRA}})
+    text=io.StringIO(newline='');writer=csv.DictWriter(text,fieldnames=COLUMNS);writer.writeheader();writer.writerows(output_rows)
+    save_new(output,text.getvalue(),encoding='utf-8-sig')
+    return dict(rebased=len(output_rows),human_answers_changed=0,source_writes=0)
 
 
 def binary(rows, truth_key, predict, *, display=True):

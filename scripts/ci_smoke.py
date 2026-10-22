@@ -20,6 +20,11 @@ def main():
     if Path(cdu_radar.__file__).resolve().is_relative_to(source):
         raise AssertionError('Smoke test must import the installed wheel')
     assert all(body for body, _ in assets().values())
+    from cdu_radar.tls import trusted_context
+    import ssl
+    context=trusted_context()
+    assert context.verify_mode==ssl.CERT_REQUIRED and context.check_hostname
+    assert files('cdu_radar').joinpath('web/simple-review.html').read_bytes()
     for name in ('sources.json','units.json','rules.json'):
         assert files('cdu_radar').joinpath(name).read_bytes()
     assert load_sources()
@@ -82,6 +87,16 @@ def main():
             cwd=directory,check=True,capture_output=True,text=True,encoding='utf-8')
         assert json.loads(result.stdout)['human_labeled_samples']==0
         assert json.loads(result.stdout)['undergraduate']['full_cohort_metrics'] is None
+        from cdu_radar.simple_review import build_page
+        assert build_page(quality,Path(directory)/'simple-review.html')['answers_prefilled']==0
+        from cdu_radar.automatic_review import AutomaticReviewAnalyzer
+        from cdu_radar.llm import LLMConfig
+        from cdu_radar.async_queue import source_snapshot
+        automatic=AutomaticReviewAnalyzer(LLMConfig('https://offline.invalid/v1','installed-smoke',
+            analysis_mode='automatic_review_v3',retries=0),mock=True)
+        with source_snapshot(mock_db) as repo:
+            checked=automatic.analyze(repo.input(1),reference_datetime())
+        assert checked['classification_valid'] and checked['publication_permission'] is False
         from cdu_radar.auto_service import AutoFeedController
         from cdu_radar.featured_api import API_V3, validate_public_v3
         from cdu_radar.rss_service import make_server

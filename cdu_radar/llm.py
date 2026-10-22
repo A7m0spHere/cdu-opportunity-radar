@@ -23,6 +23,7 @@ from .models import utc_now
 from .privacy import sanitize
 from .evidence import locate, EvidenceLocationError
 from .llm_json import strict_json, parse_model_json, ModelJSONError, PARSER_VERSION
+from .tls import trusted_context
 
 
 SCHEMA_DETAILS = {
@@ -94,7 +95,7 @@ class LLMConfig:
     cost_currency: str | None = None
 
     def __post_init__(self):
-        if self.analysis_mode not in {'legacy', 'classification_review_v2'}:
+        if self.analysis_mode not in {'legacy', 'classification_review_v2', 'automatic_review_v3'}:
             raise ValueError('Invalid analysis mode')
         if self.credential_file is not None and (not isinstance(self.credential_file,str) or not Path(self.credential_file).is_absolute()):
             raise ValueError('Credential reference must be absolute')
@@ -198,7 +199,7 @@ class ChatCompletionsProvider:
             payload["response_format"] = {"type": "json_schema", "json_schema": {"name": "notice_analysis", "strict": True, "schema": schema}}
         elif config.response_format == "json_object": payload["response_format"] = {"type": "json_object"}
         endpoint = config.base_url.rstrip("/") + "/chat/completions"
-        with httpx.Client(timeout=config.timeout, follow_redirects=False, transport=self.transport) as client:
+        with httpx.Client(timeout=config.timeout, follow_redirects=False, transport=self.transport, verify=trusted_context()) as client:
             for attempt in range(1, config.retries + 2):
                 event = {"request_uid": uuid.uuid4().hex, "started_at": utc_now(), "attempt": attempt,
                          "status_code": None, "error_category": "started", "usage": None,
@@ -365,7 +366,7 @@ class LLMAnalyzer:
         self.prompt_version = contract.PROMPT_VERSION + ":" + fingerprint(self.prompt)[:12]
         self.schema_version = contract.SCHEMA_VERSION + ":" + fingerprint(contract.OUTPUT_SCHEMA)[:12]
         implementation = [files("cdu_radar").joinpath(name).read_text(encoding="utf-8").replace("\r\n", "\n")
-                          for name in ["llm.py", "llm_json.py", "llm_schema.py", "llm_screening.py", "llm_semantics.py", "screening_dates.py", "evidence.py", "analysis_service.py", "analysis_models.py", "rule_analysis.py", "rules.json", "privacy.py"]]
+                          for name in ["llm.py", "tls.py", "llm_json.py", "llm_schema.py", "llm_screening.py", "llm_semantics.py", "screening_dates.py", "evidence.py", "analysis_service.py", "analysis_models.py", "rule_analysis.py", "rules.json", "privacy.py"]]
         self.version = ("llm-v2:" if config.schema_mode == "screening_v2" else "llm-v1:") + fingerprint([config.identity(), self.prompt, self.prompt_version, self.schema_version, contract.OUTPUT_SCHEMA, implementation])[:24]
 
     def prepare(self, notice):

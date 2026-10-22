@@ -60,8 +60,10 @@ def review(item, row, analysis, state):
             base.update(type=model['type'],domains=model['domains'],topics=model['topics'],method='llm_reviewed',
                         model_state='reviewed',type_state='classified',topic_state='tagged' if model['topics'] else 'unclassified')
             result.update(state='reviewed',changed=changed,evidence=analysis['classification_evidence'],reason=analysis['classification_reason'])
-    return dict(item,classification=base,classification_review=result,
-        undergraduate=undergraduate.assess(row['title'],row['content']))
+    scope=(analysis['student_selection'] if analysis and analysis.get('student_selection_valid') is True
+           and state in {'succeeded','partial'} else undergraduate.assess(row['title'],row['content']))
+    undergraduate.validate(scope)
+    return dict(item,classification=base,classification_review=result,undergraduate=deepcopy(scope))
 
 
 def review_summary(items):

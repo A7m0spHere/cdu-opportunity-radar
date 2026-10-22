@@ -8,6 +8,7 @@ STATES={'relevant','excluded','uncertain'}
 REASONS={
     'student_affairs':'本科生学业、权益或生活事务',
     'student_opportunity':'面向学生的参与机会',
+    'useful_information':'对本科生有阅读参考价值的信息',
     'campus_service':'面向校园的实用服务',
     'staff_only':'教师或内部工作事务',
     'graduate_only':'研究生专属事务',
@@ -96,13 +97,14 @@ def assess(title, content):
 def validate(value):
     if not isinstance(value,dict) or set(value)!={'state','reason','evidence','summary'} or value['state'] not in STATES or value['reason'] not in REASONS:
         raise ValueError('Invalid undergraduate scope')
-    reasons={'relevant':{'student_affairs','student_opportunity','campus_service'},
+    reasons={'relevant':{'student_affairs','student_opportunity','campus_service','useful_information'},
              'excluded':{'staff_only','graduate_only','retrospective'},
              'uncertain':{'audience_unclear','no_practical_action'}}
     if value['reason'] not in reasons[value['state']]:raise ValueError('Inconsistent undergraduate scope')
     if not isinstance(value['evidence'],list) or len(value['evidence'])>4 or any(not isinstance(q,str) or not 0<len(q)<=500 for q in value['evidence']):
         raise ValueError('Invalid undergraduate evidence')
     if value['state']=='relevant':
-        if not isinstance(value['summary'],str) or not 0<len(value['summary'])<=420 or any(q not in value['evidence'] for q in value['summary'].splitlines()):
+        evidence_lines={line for quote in value['evidence'] for line in quote.splitlines()}
+        if not isinstance(value['summary'],str) or not 0<len(value['summary'])<=420 or any(q not in evidence_lines for q in value['summary'].splitlines()):
             raise ValueError('Invalid undergraduate summary')
     elif value['summary'] is not None:raise ValueError('Unexpected undergraduate summary')

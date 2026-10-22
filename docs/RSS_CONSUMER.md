@@ -55,6 +55,8 @@
 
 ## 复现与未来接入清单
 
+可审查的[合成草稿节选](examples/rss-briefing.synthetic.md)与下面脚本的 `02-new/briefing.md` 对应；示例 URL 不代表真实通知。
+
 ```powershell
 .\.venv\Scripts\python.exe scripts/m10_offline_acceptance.py --directory artifacts/my-m10-loopback
 ```

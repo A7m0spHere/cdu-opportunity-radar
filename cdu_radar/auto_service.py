@@ -294,6 +294,7 @@ def serve_command(args):
                                 notice_ids=getattr(args,'analysis_notice_id',None),
                                 runner=lambda a,n,t,e:isolated_run(a,n,t,e,stop_event=stop))
                         controller.wakeup.set()
+                        if result.get('stop_reason')=='consecutive_format_failures':return
                         if any(item.get('error') in {'authentication','forbidden','missing_api_key','http_error'} for item in result['handled']):return
                     except ERRORS:LOG.warning('Classification worker unavailable')
                     if stop.wait(60):break

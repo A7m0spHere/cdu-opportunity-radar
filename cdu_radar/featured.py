@@ -31,7 +31,8 @@ ANALYSIS_STATES={'not_analyzed','queued','running','retry_wait','budget_blocked'
 FAULTS={'failed','skipped','stale','outdated','lease_expired','unavailable'}
 REASON_LABELS={'awaiting_analysis':'等待有效智能分析','importance_unknown':'重要性依据不足',
     'below_model_threshold':'模型分档未达阈值','no_rule_support':'入选依据未达规则阈值',
-    'analysis_unavailable':'智能分析暂不可用','model_and_rule':'模型建议与原文规则依据一致'}
+    'analysis_unavailable':'智能分析暂不可用','model_and_rule':'模型建议与原文规则依据一致',
+    'model_evidence':'模型筛选建议及可定位原文依据','selection_unsupported':'自动筛选依据不足'}
 
 
 class FeaturedPolicy:
@@ -50,6 +51,21 @@ class FeaturedPolicy:
         if state not in {'succeeded','partial'} or not analysis:return output
         level=analysis['importance']['level']
         output['importance']=level
+        if analysis.get('featured_selection_valid') is False:
+            output['reason_codes']=['selection_unsupported'];return output
+        if analysis.get('featured_selection_valid') is True:
+            selection=analysis['featured_selection']
+            if selection['decision']=='uncertain':return output
+            if selection['decision']=='not_selected':
+                output.update(decision='not_selected',reason_codes=['model_evidence']);return output
+            if level in LEVELS and LEVELS[level]>=LEVELS[self.settings['model_threshold']]:
+                evidence=[dict(criterion=code,label=CRITERIA[code][0],quote=selection['quotes'][0])
+                          for code in selection['criteria'] if locate(notice,selection['quotes'][0]).source in {'title','content'}]
+                if evidence:
+                    output.update(decision='selected',reason_codes=['model_evidence'],evidence=evidence,
+                                  uncertainties=['eligibility_unknown','registration_unknown'])
+                    return output
+            output.update(decision='not_selected',reason_codes=['below_model_threshold']);return output
         if level not in LEVELS:
             output['reason_codes']=['importance_unknown'];return output
         if LEVELS[level]<LEVELS[self.settings['model_threshold']]:

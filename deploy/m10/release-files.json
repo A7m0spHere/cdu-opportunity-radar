@@ -1,0 +1,23 @@
+{
+  "version": "0.2.0rc1",
+  "files": [
+    "README.md", "pyproject.toml", "requirements-lock.txt", "requirements-build.txt", "requirements-audit.txt",
+    ".github/workflows/offline-ci.yml", ".github/workflows/dependency-audit.yml",
+    "cdu_radar/__init__.py", "cdu_radar/async_cli.py", "cdu_radar/async_contract.py", "cdu_radar/async_worker.py",
+    "cdu_radar/auto_service.py", "cdu_radar/automatic_review.py", "cdu_radar/featured.py", "cdu_radar/http.py",
+    "cdu_radar/llm.py", "cdu_radar/quality_benchmark.py", "cdu_radar/review_api.py", "cdu_radar/review_contract.py",
+    "cdu_radar/rss_v1.py", "cdu_radar/simple_review.py", "cdu_radar/tls.py", "cdu_radar/undergraduate.py",
+    "cdu_radar/web/app.js", "cdu_radar/web/simple-review.html",
+    "docs/CLASSIFICATION_REVIEW.md", "docs/FEATURED_POLICY.md", "docs/PLAN.md", "docs/QUALITY_BENCHMARK.md",
+    "docs/RSS_CONSUMER.md", "docs/LLM_AUTOMATION.md", "docs/M10B_LLM_RESULTS.md", "docs/M10C_LOCAL.md",
+    "docs/M10C_RESULTS.md", "docs/SIMPLE_LABELING.md", "docs/examples/rss-briefing.synthetic.md",
+    "docs/RELEASE_0_2_0_RC1.md", "docs/SECURITY_27_RESULTS.md",
+    "scripts/ci_smoke.py", "scripts/diagnose_source.py", "scripts/m10_local_acceptance.py", "scripts/m10_probe.py",
+    "scripts/prepare_release.py", "scripts/refresh_quality_review.py", "scripts/run_automatic_review.py",
+    "scripts/simple_quality_review.py", "scripts/validate_automatic_review.py", "scripts/validate_simple_review.cjs",
+    "scripts/verify_security_environment.py", "scripts/verify_tls_runtime.py",
+    "tests/test_automatic_review.py", "tests/test_m10_probe.py", "tests/test_simple_review.py", "tests/test_security_environment.py",
+    "deploy/m10/analysis.example.json", "deploy/m10/environment.example", "deploy/m10/cdu-radar.service.draft",
+    "deploy/m10/run_service.py", "deploy/m10/release-files.json"
+  ]
+}

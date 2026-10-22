@@ -1,5 +1,7 @@
 # CDU Opportunity Radar · 校园机会雷达
 
+当前部署候选为 **0.2.0rc1**：[安装、预检与回滚](docs/RELEASE_0_2_0_RC1.md) · [#27 依赖与 TLS 修复记录](docs/SECURITY_27_RESULTS.md)。
+
 [![Offline CI](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml/badge.svg)](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml)
 
 面向成都大学学生的公开官方信息聚合工具。把普通通知、学院新闻、学术活动、比赛与科研实践放在一处浏览，按发布单位、类型、主题和日期/报名状态自主筛选，每条信息保留官方原文。长期目标与分批边界见[产品范围](docs/PRODUCT_SCOPE.md)。
@@ -72,9 +74,11 @@ python3 -m venv .venv
 
 独立的[私有异步分析 worker](docs/ASYNC_ANALYSIS.md) 支持离线 Mock、预算、重试和证据校验；网页/RSS 读取不触发模型调用。M7 的历史离线验证见 [M7 验收](docs/M7_RESULTS.md)，本次分类复核的真实调用和采用情况见 [分类复核](docs/CLASSIFICATION_REVIEW.md)。
 
-新版学生页读取 `/api/notices/v4?audience=undergraduate`，筛选订阅使用 `/rss/v2/all.xml` 与 `/rss/v2/featured.xml`，共用受众范围、原文要点和有效分类。API 默认或 `audience=all` 仍返回全部合格原文；旧 v1/v2/v3 JSON 与 RSS v1 保留兼容投影。本科生范围采用独立的原文规则，LLM 当前复核分类；详细机制、真实小样本结果及 worker 见 [分类复核](docs/CLASSIFICATION_REVIEW.md)。
+新版学生页读取 `/api/notices/v4?audience=undergraduate`，筛选订阅使用 `/rss/v2/all.xml` 与 `/rss/v2/featured.xml`，共用受众范围、原文要点和有效分类。API 默认或 `audience=all` 仍返回全部合格原文；旧 v1/v2/v3 JSON 与 RSS v1 保留兼容投影。启用 v3 worker 后，LLM 自动判断分类、综合重要精选、本科生阅读价值及办理事项，程序核验引用，缺失或失败时回退原文规则；公开读取不触发模型。启动方法见 [LLM 自动化](docs/LLM_AUTOMATION.md)，真实结果和标注分歧见 [本轮验收](docs/M10B_LLM_RESULTS.md)。
 
 ## 信息与接口
+
+短时本机闭环、一次只读探针、停止恢复及后续服务器 48 小时交接见 [M10-C 本机验收](docs/M10C_LOCAL.md)。本机真实采集最多执行 3 轮，不默认持续运行。
 
 ```text
 既有可信官方来源 → 采集与解析 → 分类、去重及质量检查 → 网页 / RSS

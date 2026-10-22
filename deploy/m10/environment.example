@@ -1,0 +1,10 @@
+# Private service environment. Model and collection are off until configured.
+CDU_RAW_DB=/var/lib/cdu-radar/raw.sqlite3
+CDU_ANALYSIS_DB=/var/lib/cdu-radar/jobs.sqlite3
+CDU_STATE_DIR=/var/lib/cdu-radar/http-state
+CDU_ANALYSIS_CONFIG=/etc/cdu-radar/analysis.json
+CDU_PORT=8765
+CDU_ENABLE_LLM=0
+CDU_COLLECT_INTERVAL=0
+# Set privately only when enabling the model worker. Never include in bundles.
+CDU_LLM_API_KEY=

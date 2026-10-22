@@ -56,7 +56,7 @@ class AsyncAnalyzer:
         self.model_name = config.model
         self.prompt_version, self.schema_version = PROMPT_VERSION, SCHEMA_VERSION
         self.prescreen = prescreen or {'types':[], 'topics':[]}
-        modules = ['async_contract.py','llm.py','llm_json.py','llm_screening.py','llm_schema.py',
+        modules = ['async_contract.py','llm.py','tls.py','llm_json.py','llm_screening.py','llm_schema.py',
             'llm_semantics.py','screening_dates.py','rule_analysis.py','rules.json','taxonomy.py',
             'analysis_models.py','analysis_service.py','analysis_store.py','evidence.py','privacy.py']
         code = [files('cdu_radar').joinpath(n).read_text(encoding='utf-8').replace('\r\n','\n') for n in modules]

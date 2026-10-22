@@ -43,7 +43,8 @@ def diagnose(url, timeout=10, public_dns=False):
                     with socket.socket(family, socket.SOCK_STREAM) as sock:
                         sock.settimeout(timeout)
                         sock.connect((address, 443))
-                        with ssl.create_default_context().wrap_socket(sock, server_hostname=host) as tls:
+                        from cdu_radar.tls import trusted_context
+                        with trusted_context().wrap_socket(sock, server_hostname=host) as tls:
                             report["probes"].append({"kind": "tls", "family": name, "address": address,
                                 "ok": True, "tls_version": tls.version(), "cipher": tls.cipher()[0]})
                 except (OSError, ssl.SSLError) as exc:
@@ -54,9 +55,10 @@ def diagnose(url, timeout=10, public_dns=False):
             report["dns"].append({"family": name, **redact_error(exc)})
     for mode in ["environment", "direct", "direct_ipv4", "direct_ipv6"]:
         started = time.monotonic()
-        kwargs = {"trust_env": mode == "environment"}
+        from cdu_radar.tls import trusted_context
+        kwargs = {"trust_env": mode == "environment", "verify": trusted_context()}
         if mode in {"direct_ipv4", "direct_ipv6"}:
-            kwargs["transport"] = httpx.HTTPTransport(local_address="0.0.0.0" if mode == "direct_ipv4" else "::")
+            kwargs["transport"] = httpx.HTTPTransport(local_address="0.0.0.0" if mode == "direct_ipv4" else "::", verify=trusted_context())
         try:
             with httpx.Client(timeout=timeout, follow_redirects=False, **kwargs) as client:
                 response = client.get(url, headers={"User-Agent": "cdu-opportunity-radar/0.1 (network diagnosis; low-frequency)"})

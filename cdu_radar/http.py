@@ -8,6 +8,7 @@ from urllib.robotparser import RobotFileParser
 import httpx
 
 from .models import RadarError, official_url, utc_now
+from .tls import trusted_context
 
 LOG = logging.getLogger(__name__)
 USER_AGENT = "cdu-opportunity-radar/0.1 (local research; low-frequency notice collector)"
@@ -25,7 +26,7 @@ class ResolveTransport(httpx.BaseTransport):
             if host not in allowed_hosts or not ipaddress.ip_address(value).is_global:
                 raise ValueError("DNS overrides require a configured host and a global IP")
             self.mapping[host] = value
-        self.inner = httpx.HTTPTransport()
+        self.inner = httpx.HTTPTransport(verify=trusted_context())
 
     def handle_request(self, request):
         host = request.url.host
@@ -93,7 +94,7 @@ class Fetcher:
             if trust_env or transport is not None:
                 raise ValueError("DNS overrides require trust_env=False and no custom transport")
             transport = ResolveTransport(resolve, self.allowed_hosts)
-        self.client = httpx.Client(timeout=timeout, follow_redirects=False, trust_env=trust_env,
+        self.client = httpx.Client(timeout=timeout, follow_redirects=False, trust_env=trust_env, verify=trusted_context(),
                                    headers={"User-Agent": USER_AGENT}, transport=transport)
         self.retries = retries
         self.interval = interval

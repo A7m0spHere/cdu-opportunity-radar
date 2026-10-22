@@ -126,7 +126,9 @@ def render(payload, path, *, collection=None, first_featured=None):
         if featured:
             meta(item, 'first_featured_at', stamp(row))
             lines += ['首次入选精选：' + stamp(row), 'RSS pubDate 为首次入选精选时间，不是来源发布日期。',
-                      '重要性为智能建议，经原文规则复核，不代表官方重要性认定或当前可报名。']
+                      ('重要性为智能建议，经原文引用校验，不代表官方重要性认定或当前可报名。'
+                       if 'model_evidence' in row['featured']['reason_codes'] else
+                       '重要性为智能建议，经原文规则复核，不代表官方重要性认定或当前可报名。')]
             lines += ['原文入选依据（' + e['label'] + '）：' + e['quote'] for e in row['featured']['evidence']]
             unknowns = {'eligibility_unknown': '参与资格未知', 'registration_unknown': '报名状态未知', 'attachments_unread': '附件正文未读取'}
             lines += [unknowns[u] for u in row['featured']['uncertainties']]

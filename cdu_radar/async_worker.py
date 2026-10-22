@@ -15,12 +15,16 @@ from .llm import LLMConfig, LLMError
 def _child(sender, config, mock, prescreen, notice, reference_time):
     try:
         from .review_contract import ReviewAnalyzer
+        from .automatic_review import AutomaticReviewAnalyzer
         cfg=LLMConfig(**config)
-        kind=ReviewAnalyzer if cfg.analysis_mode=='classification_review_v2' else AsyncAnalyzer
+        kind=AutomaticReviewAnalyzer if cfg.analysis_mode=='automatic_review_v3' else ReviewAnalyzer if cfg.analysis_mode=='classification_review_v2' else AsyncAnalyzer
         analyzer=kind(cfg,mock=mock,prescreen=prescreen)
         def event_sink(event):
             # Filter before IPC, too: full provider diagnostics never leave child.
-            sender.send(('usage',{'usage':event.get('usage'),'status_code':event.get('status_code')}))
+            allowed={'validation_stage','error_detail','schema_error_path','missing_schema_fields','finish_reason',
+                     'json_error_detail','content_chars','reasoning_chars','request_format','parse_method'}
+            diagnostic={key:value for key,value in event.get('diagnostic',{}).items() if key in allowed}
+            sender.send(('usage',{'usage':event.get('usage'),'status_code':event.get('status_code'),'diagnostic':diagnostic}))
         result=analyzer.analyze(notice,reference_time,event_sink)
         sender.send(('result',result))
     except BaseException as exc:
@@ -59,18 +63,27 @@ def isolated_run(analyzer, notice, reference_time, on_event, *, target=_child, s
 def run_round(queue, analyzer, *, reference_time, runner=isolated_run, notice_ids=None):
     if analyzer.config.timeout+5>=queue.policy.lease_seconds:
         raise ValueError('Lease must exceed total task timeout by more than 5 seconds')
-    scan=queue.scan(analyzer,notice_ids=notice_ids);handled=[]
+    scan=queue.scan(analyzer,notice_ids=notice_ids);handled=[];format_failures=0;stop_reason=None
     for _ in range(queue.policy.batch_limit):
         claim=queue.claim(analyzer,notice_ids=notice_ids)
         if claim is None:break
         claim['config']=analyzer.config
+        diagnostic={}
+        def event_sink(event):
+            queue.record_event(claim,event)
+            diagnostic.update(event.get('diagnostic',{}))
         try:
-            result,error=runner(analyzer,claim['notice'],reference_time,lambda e:queue.record_event(claim,e))
+            result,error=runner(analyzer,claim['notice'],reference_time,event_sink)
         except Exception:
             result,error=None,'internal_error'
         committed=queue.finish(claim,result=result,error=error)
         handled.append({'job_id':claim['id'],'attempt':claim['attempts'],'committed':committed,
-                        'error':error,'state':result['state'] if result else None})
+                        'error':error,'state':result['state'] if result else None,
+                        **({'diagnostic':diagnostic} if error and diagnostic else {})})
+        format_failures=format_failures+1 if error in {'invalid_json','invalid_api_json','schema_validation','no_final_text','incomplete_output'} else 0
+        if format_failures>=analyzer.config.stop_after_format_failures:
+            stop_reason='consecutive_format_failures';break
         # A credential/configuration failure cannot be repaired by spending more.
         if error in {'authentication','forbidden','missing_api_key','http_error'}:break
-    return {'scan':scan,'handled':handled,'mode':'offline_mock' if analyzer.mock else 'provider'}
+    return {'scan':scan,'handled':handled,'mode':'offline_mock' if analyzer.mock else 'provider',
+            **({'stop_reason':stop_reason} if stop_reason else {})}

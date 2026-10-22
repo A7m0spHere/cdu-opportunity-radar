@@ -173,7 +173,8 @@ function card(item) {
     find(".featured-basis").textContent = "入选依据：" + item.featured.evidence.map((e) => e.label).join("、");
     find(".featured-evidence").replaceChildren(...item.featured.evidence.map((e) => Object.assign(document.createElement("li"), {textContent: "原文依据：“" + e.quote + "”"})));
     const unknowns = {eligibility_unknown: "参与资格待核实", registration_unknown: "报名状态未知", attachments_unread: "附件正文未读取"};
-    find(".featured-boundary").textContent = "重要性是智能建议，经规则复核；摘要为原文节选，不代表官方重要性认定或当前可报名。" + item.featured.uncertainties.map((u) => unknowns[u]).filter(Boolean).join("；");
+    const check = item.featured.reason_codes.includes("model_evidence") ? "经原文引用校验" : "经规则复核";
+    find(".featured-boundary").textContent = "重要性是智能建议，" + check + "；摘要为原文节选，不代表官方重要性认定或当前可报名。" + item.featured.uncertainties.map((u) => unknowns[u]).filter(Boolean).join("；");
   }
   find(".checked-at").textContent = "系统采集 " + formatTime(item.source_checked_at);
   find(".checked-at").title = "最近成功采集：" + item.source_checked_at + "；首次收录：" + item.first_aggregated_at;

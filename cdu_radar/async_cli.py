@@ -57,7 +57,8 @@ def configuration(path, mock):
             raise ValueError('Invalid prescreen values')
         pre[key]=sorted(values)
     from .review_contract import ReviewAnalyzer
-    kind=ReviewAnalyzer if config.analysis_mode=='classification_review_v2' else AsyncAnalyzer
+    from .automatic_review import AutomaticReviewAnalyzer
+    kind=AutomaticReviewAnalyzer if config.analysis_mode=='automatic_review_v3' else ReviewAnalyzer if config.analysis_mode=='classification_review_v2' else AsyncAnalyzer
     return kind(config,mock=mock,prescreen=pre),policy
 
 

@@ -1,0 +1,26 @@
+{
+  "llm": {
+    "base_url": "https://api.czrouter.online/v1",
+    "model": "deepseek-v4.1-flash",
+    "key_env": "CDU_LLM_API_KEY",
+    "analysis_mode": "automatic_review_v3",
+    "protocol_profile": "deepseek",
+    "response_format": "json_object",
+    "thinking_mode": "disabled",
+    "temperature": 0,
+    "max_input_chars": 20000,
+    "max_output_tokens": 4096,
+    "timeout": 120,
+    "retries": 0
+  },
+  "queue": {
+    "batch_limit": 3,
+    "scan_limit": 100,
+    "max_attempts": 2,
+    "lease_seconds": 240,
+    "request_limit": 20,
+    "token_limit": 200000,
+    "window_seconds": 86400
+  },
+  "prescreen": {"types": [], "topics": []}
+}

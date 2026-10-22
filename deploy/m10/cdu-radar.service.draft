@@ -1,0 +1,27 @@
+# Review paths/user/budgets before installation. No Install section or auto-start.
+[Unit]
+Description=CDU Radar private loopback service
+After=network-online.target
+
+[Service]
+Type=simple
+User=cdu-radar
+Group=cdu-radar
+WorkingDirectory=/opt/cdu-radar/release-0.2.0rc1
+EnvironmentFile=/etc/cdu-radar/environment
+UnsetEnvironment=SSL_CERT_FILE SSL_CERT_DIR REQUESTS_CA_BUNDLE CURL_CA_BUNDLE
+ExecStart=/opt/cdu-radar/venv-0.2.0rc1/bin/python /opt/cdu-radar/release-0.2.0rc1/deploy/m10/run_service.py
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+KillMode=mixed
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/cdu-radar
+MemoryMax=768M
+CPUQuota=75%
+TasksMax=64

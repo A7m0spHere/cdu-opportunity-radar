@@ -1,0 +1,29 @@
+name: Dependency audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.12'
+      - name: Install pinned audit tool
+        run: python -m pip install -c requirements-lock.txt -r requirements-build.txt -r requirements-audit.txt
+      - name: Audit maintained dependency pins
+        run: python -m pip_audit --strict --no-deps --disable-pip -r requirements-lock.txt -f json -o dependency-audit.json
+      - name: Audit pinned build and audit tools
+        run: python -m pip_audit --strict --no-deps --disable-pip -r requirements-build.txt -r requirements-audit.txt -f json -o tooling-audit.json

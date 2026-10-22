@@ -16,7 +16,7 @@ jobs:
   test:
     name: ${{ matrix.os }} / Python ${{ matrix.python }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +24,7 @@ jobs:
         python: ['3.11', '3.12']
     env:
       PYTHONUTF8: '1'
+      PIP_DISABLE_PIP_VERSION_CHECK: '1'
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -31,8 +32,12 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: ${{ matrix.python }}
+      - name: Install pinned packaging tools
+        run: python -m pip install -r requirements-build.txt
       - name: Install development dependencies
-        run: python -m pip install -e ".[dev]"
+        run: python -m pip install -c requirements-lock.txt -e ".[dev]"
+      - name: Verify dependency and TLS environment
+        run: python scripts/verify_security_environment.py --require-lock --output security-environment.json
       - name: Offline regression suite (mock sources and loopback only)
         run: python -m pytest -q
       - name: Build and install wheel

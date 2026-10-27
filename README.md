@@ -1,6 +1,6 @@
 # CDU Opportunity Radar · 校园机会雷达
 
-当前部署候选为 **0.2.0rc1**：[安装、预检与回滚](docs/RELEASE_0_2_0_RC1.md) · [#27 依赖与 TLS 修复记录](docs/SECURITY_27_RESULTS.md)。
+当前服务器运行 **0.2.0rc3**：[部署与观察](docs/SERVER_DEPLOYMENT.md) · [RSS 锁竞争与复查修复](docs/RECOVERY_RESULTS_20261027.md) · [Issue 收尾核查](docs/ISSUE_AUDIT_20261027.md)。首次安装准备见 [rc1 安装与回滚](docs/RELEASE_0_2_0_RC1.md)，依赖与 TLS 修复见 [#27 记录](docs/SECURITY_27_RESULTS.md)。
 
 [![Offline CI](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml/badge.svg)](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml)
 
@@ -22,7 +22,7 @@ Python 3.11+ · [AGPL-3.0-only](LICENSE) · 本地 MVP，有限体验准备阶�
 - **保留不确定性**：缺少报名依据时明确显示“报名状态未确认”；当前机会可以为空。
 - **阻止无效内容**：来源未验证、解析异常、原文失效或撤回的信息不作为有效通知发布；服务故障返回 503，网页隐藏旧数据。
 
-当前为本地 MVP 与有限体验准备阶段。精选规则、待人工标注基准和双视图验证见 [M8 记录](docs/M8_RESULTS.md)，真实人工精选效果尚待标注验收。既有 M5-B 试点接入学生处、团委两个栏目，实采新增 **6 篇独立原文、6 篇合格信息、0 篇新增参与候选/明确开放证据**；有界样本不代表全校覆盖率或当前机会总数。
+当前为单机服务器有限体验阶段，按两小时周期采集并使用已有模型分类；公开读取不调用模型。首批 10 篇真人开发集标注已回收，独立 holdout 效果验收仍待完成，见 [人工与模型对照](docs/M10B_LLM_RESULTS.md)。早期精选规则及双视图验证见 [M8 记录](docs/M8_RESULTS.md)；历史试点数量不代表全校覆盖率或当前机会总数。
 
 ## 快速开始
 

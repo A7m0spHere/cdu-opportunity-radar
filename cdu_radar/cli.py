@@ -114,7 +114,7 @@ def main(argv=None) -> int:
     auto_server.add_argument('--limit',type=positive_int,default=3)
     auto_server.add_argument('--recheck-limit',type=positive_int,default=3,help='Due original pages per round (default 3)')
     auto_server.add_argument('--request-budget',type=int,choices=range(6,501),metavar='6..500',default=48,
-                             help='Wire requests per round, including robots/redirects/retries; half reserved for originals')
+                             help='Wire requests per round, including robots/redirects/retries; overdue originals get priority')
     auto_server.add_argument('--no-env-proxy',action='store_true')
     auto_server.add_argument('--analysis-state',type=Path,help='Optional private M7 queue; opened read-only, no model requests')
     auto_server.add_argument('--analysis-config',type=Path,help='Non-secret M7 config for expected version; no Key read')

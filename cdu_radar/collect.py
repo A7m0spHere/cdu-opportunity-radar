@@ -1,5 +1,6 @@
 import logging
 import time
+from datetime import timedelta
 from dataclasses import replace
 from urllib.parse import urlsplit
 
@@ -7,14 +8,17 @@ from .adapters import ARTICLE_PATH, VsbAdapter, article_adapter
 from .models import ParseError, RadarError, Source, utc_now
 from .sources import content_source
 from .http import RequestBudgetExceeded
+from .analysis_models import reference_datetime
 
 LOG = logging.getLogger(__name__)
 
 
-def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages: int = 1, stop_event=None, skip_known=False) -> list[dict]:
-    if limit <= 0 or max_pages <= 0:
+def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages: int = 1, stop_event=None, skip_known=False, tolerate_failures=0) -> list[dict]:
+    if limit <= 0 or max_pages <= 0 or type(tolerate_failures) is not int or not 0<=tolerate_failures<=10:
         raise ValueError("limit and max_pages must be positive")
     summaries = []
+    from . import discovery_failures
+    if tolerate_failures:discovery_failures.initialize(store.db)
     for source in sources:
         if stop_event is not None and stop_event.is_set():break
         started = utc_now()
@@ -23,6 +27,9 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
         errors = []
         failures = []
         fetcher.source_id = source.id
+        def full():
+            return (len(seen_articles)>=limit+tolerate_failures or
+                    tolerate_failures and (sum(counts[k] for k in ('inserted','updated','unchanged'))>=limit or counts['failed']>=tolerate_failures))
         try:
             # Attempt known column connectivity even when its adapter is pending.
             if not source.column_url:
@@ -32,12 +39,19 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
             visited_pages, seen_articles = set(), set()
             for _ in range(max_pages):
                 if stop_event is not None and stop_event.is_set():break
-                if next_url is None or next_url in visited_pages or len(seen_articles) >= limit:
+                if next_url is None or next_url in visited_pages or full():
                     break
                 visited_pages.add(next_url)
                 html, final_url = fetcher.fetch(next_url)
                 counts["pages_read"] += 1
                 links = adapter.parse_list(html, final_url)
+                if tolerate_failures:
+                    today=reference_datetime().date();cutoff=(today-timedelta(days=14)).isoformat()
+                    def priority(link):
+                        day=link.published_at
+                        group=0 if day and cutoff<=day<=today.isoformat() else 1 if day is None else 2
+                        return (group,-int(day.replace('-','')) if day else 0)
+                    links=sorted(links,key=priority)
                 for link in links:
                     if stop_event is not None and stop_event.is_set():break
                     if link.canonical_url in seen_articles:
@@ -50,7 +64,9 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                                 store.record_discovery(known['id'],source.id,utc_now(),link.published_at)
                             counts['duplicates'] += 1
                             continue
-                    if len(seen_articles) >= limit:
+                    if tolerate_failures and discovery_failures.cooling(store.db,source.id,link.canonical_url):
+                        continue
+                    if full():
                         break
                     seen_articles.add(link.canonical_url)
                     canonical = link.canonical_url
@@ -71,10 +87,12 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                         if stop_event is not None and stop_event.is_set():break
                         result = store.save_notice(source.id, canonical, article, discovery_published_at=link.published_at)
                         counts[result] += 1
+                        if tolerate_failures:discovery_failures.succeeded(store.db,source.id,link.canonical_url)
                         counts["duplicates"] += result in {"updated","unchanged"}
                     except RequestBudgetExceeded:
                         raise
                     except RadarError as exc:
+                        if tolerate_failures:discovery_failures.failed(store.db,source.id,link.canonical_url,exc.category+':'+getattr(exc,'detail','unsupported_content'))
                         store.fail_notice(link.canonical_url, exc)
                         if canonical != link.canonical_url:
                             store.fail_notice(canonical, exc)
@@ -83,7 +101,7 @@ def collect(store, fetcher, sources: list[Source], *, limit: int = 3, max_pages:
                         errors.append(str(exc))
                         failures.append(exc)
                         LOG.error("source=%s category=%s scope=%s article_error=%s", source.id,exc.category,exc.scope,exc)
-                next_url = adapter.next_page(html, final_url, source.column_url) if len(seen_articles)<limit and counts["pages_read"]<max_pages else None
+                next_url = adapter.next_page(html, final_url, source.column_url) if not full() and counts["pages_read"]<max_pages else None
         except RequestBudgetExceeded:
             # A local scheduling limit is not evidence that the source failed.
             summaries.append({'source':source.id, **counts, 'success':False, 'error_category':'budget'})

@@ -3,7 +3,7 @@
 Short IMMEDIATE transactions serialize claims and budget reservations. Model work
 runs outside transactions; expiring lease tokens fence late workers.
 """
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from dataclasses import dataclass
 import json
 import math
@@ -78,7 +78,7 @@ def source_snapshot(path):
 
 
 class JobQueue:
-    def __init__(self, path, raw_path, *, policy=None, clock=time.time, read_only=False):
+    def __init__(self, path, raw_path, *, policy=None, clock=time.time, read_only=False, read_timeout=0):
         self.path, self.raw_path = Path(path).absolute(), Path(raw_path).resolve(strict=True)
         if not self.raw_path.is_file():raise ValueError('Raw database does not exist')
         if self.path.is_symlink() or self.path.parent.is_symlink():raise ValueError('State database symlinks are refused')
@@ -90,7 +90,7 @@ class JobQueue:
         self.policy, self.clock = policy or QueuePolicy(), clock
         if not read_only:self.path.parent.mkdir(parents=True,exist_ok=True)
         self.db=sqlite3.connect(self.path.as_uri()+'?mode=ro' if read_only else self.path,
-                               uri=read_only,timeout=0 if read_only else 10,isolation_level=None)
+                               uri=read_only,timeout=read_timeout if read_only else 10,isolation_level=None)
         self.db.row_factory=sqlite3.Row
         self.db.execute('PRAGMA foreign_keys=ON')
         # Refuse accidental use of an existing application database before any DDL.
@@ -128,6 +128,19 @@ class JobQueue:
         except BaseException:
             self.db.rollback();raise
         else:self.db.commit()
+
+    @contextmanager
+    def source_transaction(self):
+        # All simultaneous cross-database locks use raw -> analysis order, as
+        # HTTP projections do. Taking the queue write lock first could deadlock
+        # against an HTTP raw reader and a collector's pending raw commit.
+        with ExitStack() as stack:
+            try:
+                repo=stack.enter_context(source_snapshot(self.raw_path))
+                repo.db.execute('SELECT id FROM notices LIMIT 1').fetchone()
+            except (ValueError,TypeError,sqlite3.Error,OSError):
+                stack.close();repo=None
+            with self.transaction():yield repo
 
     def scan(self, analyzer, notice_ids=None):
         self.ensure_source()
@@ -240,7 +253,7 @@ class JobQueue:
         if notice_ids is not None:
             if not notice_ids or any(type(i) is not int or i<=0 for i in notice_ids):raise ValueError('Invalid notice selection')
             selection=' AND notice_id IN ('+','.join('?' for _ in notice_ids)+')';params.extend(notice_ids)
-        with self.transaction():
+        with self.source_transaction() as repo:
             self.recover(now)
             job=self.db.execute("SELECT * FROM jobs WHERE pipeline_version=? AND state IN ('queued','retry_wait','budget_blocked') AND next_at<=?"+selection+" ORDER BY next_at,id LIMIT 1",params).fetchone()
             if not job:return None
@@ -249,7 +262,8 @@ class JobQueue:
                 return None
             self.ensure_source()
             try:
-                with source_snapshot(self.raw_path) as repo:notice=repo.input(job['notice_id'])
+                if repo is None:raise ValueError('Source unavailable')
+                notice=repo.input(job['notice_id'])
             except (ValueError,TypeError,sqlite3.Error,OSError):
                 self.db.execute("UPDATE jobs SET state='stale',error='source_unavailable',updated_at=? WHERE id=?",(now,job['id']))
                 return None
@@ -292,14 +306,15 @@ class JobQueue:
 
     def finish(self, claim, *, result=None, error=None):
         now=self.clock();error=error if error in ERRORS else 'internal_error' if error else None
-        with self.transaction():
+        with self.source_transaction() as repo:
             self.db.execute("UPDATE attempts SET state=?,finished_at=?,error=? WHERE id=? AND state='reserved'",
                 ('unknown' if error in {'timeout','worker_lost'} else 'completed',now,error,claim['attempt_id']))
             job=self.db.execute('SELECT * FROM jobs WHERE id=?',(claim['id'],)).fetchone()
             if job['state']!='running' or job['lease_token']!=claim['lease_token'] or job['lease_until']<=now:return False
             try:
                 self.ensure_source()
-                with source_snapshot(self.raw_path) as repo:current=repo.input(job['notice_id'])
+                if repo is None:raise ValueError('Source unavailable')
+                current=repo.input(job['notice_id'])
                 changed=current.input_hash!=job['input_hash']
             except (ValueError,TypeError,sqlite3.Error,OSError):changed=True
             if changed:

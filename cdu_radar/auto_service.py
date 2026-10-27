@@ -1,9 +1,11 @@
 """Automatic RSS on the M3-A lease, rollback-lock response gate and 503 policy."""
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
 import sqlite3
+import threading
 from xml.etree import ElementTree as ET
 
 from .auto_publish import AutoRepository, NS, render
@@ -12,9 +14,10 @@ from .rss_service import FeedController, Snapshot, ERRORS, LOG, make_server
 from .student_page import assets, public_snapshot, public_snapshot_v2
 from .taxonomy import API_V2, filter_payload
 from .featured_api import API_V3, project, split_query
-from .featured import FeaturedPolicy, decisions
+from .featured import FeaturedPolicy, decisions, ValidationCache
 from . import rss_v1, subscription_store
 from . import review_api
+from .models import InvalidFilter
 
 
 class AutoFeedController(FeedController):
@@ -33,6 +36,11 @@ class AutoFeedController(FeedController):
         self.featured_policy=featured_policy or FeaturedPolicy()
         self.static_assets=assets()
         super().__init__(db,state_dir,**kwargs)
+        self._refresh_lock=threading.Lock()
+        self._metrics_lock=threading.Lock()
+        self._reads=threading.local()
+        self.gate_failures=Counter()
+        self.validation_cache=ValidationCache()
         self.subscription_path=self.lease.root/'subscriptions.sqlite3'
         self.subscription_ready=False
         self.subscription_budget=rss_v1.RequestBudget(self.monotonic)
@@ -44,61 +52,135 @@ class AutoFeedController(FeedController):
     @contextmanager
     def reader(self):
         if not self.db.is_file():raise ValueError('Source database unavailable')
-        db=sqlite3.connect(self.db.as_uri()+'?mode=ro',uri=True,timeout=1)
+        current=getattr(self._reads,'raw',None)
+        if current is not None:
+            yield current;return
+        db=sqlite3.connect(self.db.as_uri()+'?mode=ro',uri=True,timeout=5)
         try:
             db.row_factory=sqlite3.Row;db.execute('BEGIN')
             if db.execute('PRAGMA journal_mode').fetchone()[0].lower() not in {'delete','truncate','persist'}:
                 raise ValueError('Rollback journaling required for response gate')
-            yield AutoRepository(db)
-        finally:db.close()
+            repo=AutoRepository(db);self._reads.raw=repo
+            yield repo
+        finally:
+            self._reads.raw=None;db.close()
+
+    @contextmanager
+    def analysis_reader(self):
+        # The v2 featured route nests reviewed_gate and selection_gate. A second
+        # connection would deadlock behind a writer waiting for the first read.
+        from .async_queue import JobQueue
+        current=getattr(self._reads,'analysis',None)
+        if current is not None:
+            yield current;return
+        with JobQueue(self.analysis_state,self.db,read_only=True,read_timeout=.25) as queue:
+            queue.db.execute('BEGIN')
+            self._reads.analysis=queue
+            try:yield queue
+            finally:
+                self._reads.analysis=None;queue.db.rollback()
 
     @contextmanager
     def writer(self):
-        db=sqlite3.connect(self.db.as_uri()+'?mode=rw',uri=True,timeout=1)
+        db=sqlite3.connect(self.db.as_uri()+'?mode=rw',uri=True,timeout=10)
         try:
             db.row_factory=sqlite3.Row;db.execute('PRAGMA foreign_keys=ON')
             yield AutoRepository(db)
         finally:db.close()
 
     def refresh(self):
-        with self.lock:
+        with self._refresh_lock:
             if self.stop_event.is_set():return False
             try:
                 # Check existence and rollback journaling before any writes.
                 # reserve() revalidates all source data under the write lock.
-                with self.reader():pass
+                with self.reader() as repo:
+                    needs_reservation=repo.db.execute('SELECT 1 FROM notices n LEFT JOIN auto_publications a ON a.notice_id=n.id WHERE a.notice_id IS NULL LIMIT 1').fetchone() is not None
                 if self.output.is_symlink():raise ValueError('Unsafe feed cache')
-                with self.writer() as repo:
-                    # Reserve first publication times durably before file I/O;
-                    # retries after disk failures cannot change identity/time.
-                    repo.db.execute('BEGIN IMMEDIATE')
-                    repo.reserve(self.clock());repo.db.commit()
-                    repo.db.execute('BEGIN IMMEDIATE')
+                if needs_reservation:
+                    with self.writer() as repo:
+                        # Reserve before file I/O, only when new originals need it.
+                        repo.db.execute('BEGIN IMMEDIATE');repo.reserve(self.clock());repo.db.commit()
+                with self.reader() as repo:
                     plan=repo.feed_plan(self.clock())
                     atomic_write(self.output,render(plan['items']))
-                    repo.db.commit()
                 with self.reader() as repo:
                     live=repo.feed_plan(self.clock());body=render(live['items'])
                     if self.output.read_bytes()!=body:raise ValueError('Source changed during refresh')
                     data=public_snapshot(live['items'],refreshed_at=self.clock().isoformat(),data_mode=self.data_mode)
                     data_v2=public_snapshot_v2(live['items'],refreshed_at=data['refreshed_at'],data_mode=self.data_mode,filter_options=live['filter_options'])
-                    self.snapshot=Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',live['plan_hash'],self.monotonic(),data,data_v2)
+                    candidate=Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',live['plan_hash'],self.monotonic(),data,data_v2)
                 # Optional analysis/storage faults must not take down all-original RSS.
-                self.subscription_ready=False
+                subscription_ready=False
                 if self.analysis_state is not None and self.analysis_analyzer is not None:
                     try:
-                        with self.selection_gate(self.snapshot) as (token,selected):
+                        with self.selection_gate(candidate) as (token,selected):
                             with subscription_store.connection(self.subscription_path,self.db,write=True) as state:
                                 subscription_store.persist(state,token,selected,self.clock())
-                        self.subscription_ready=True
+                        subscription_ready=True
                     except ERRORS:
                         LOG.warning('Featured subscription unavailable')
-                self.reason='ready';self.refreshes+=1;return True
+                with self.lock:
+                    self.snapshot=candidate;self.subscription_ready=subscription_ready
+                    self.reason='ready';self.refreshes+=1
+                self.report_private_health()
+                return True
             except ERRORS as exc:
-                self.failures+=1
-                self.invalidate('database_error' if isinstance(exc,sqlite3.Error) else 'refresh_failed')
-                LOG.warning('Automatic RSS unavailable: %s',self.reason)
+                detail=getattr(exc,'sqlite_errorname',type(exc).__name__)
+                with self.lock:
+                    self.failures+=1
+                    # A busy writer cannot make a validated snapshot untrue.
+                    # read_gate still checks its age and live source plan.
+                    busy=isinstance(exc,sqlite3.OperationalError) and (getattr(exc,'sqlite_errorcode',0)&255) in {sqlite3.SQLITE_BUSY,sqlite3.SQLITE_LOCKED}
+                    if not busy or self.snapshot is None or self.monotonic()-self.snapshot.validated_at>self.max_age:
+                        self.invalidate('database_error' if isinstance(exc,sqlite3.Error) else 'refresh_failed')
+                self.gate_failure('refresh_'+detail)
+                LOG.warning('Automatic RSS refresh failed: %s',detail)
+                self.report_private_health()
                 return False
+
+    def gate_failure(self,reason):
+        with self._metrics_lock:self.gate_failures[reason]+=1
+        LOG.info('Automatic RSS gate: %s',reason)
+
+    @contextmanager
+    def read_gate(self):
+        # Only the immutable snapshot pointer uses the process lock. Each
+        # response still holds its own rollback-journal read transaction until
+        # the last byte, preserving revoke/update ordering across processes.
+        if not self.lock.acquire(timeout=.1):
+            self.gate_failure('snapshot_lock_busy');yield None;return
+        try:snapshot=self.snapshot
+        finally:self.lock.release()
+        reason=None
+        if self.stop_event.is_set():reason='stopped'
+        elif snapshot is None or self.monotonic()-snapshot.validated_at>self.max_age:reason='validation_expired'
+        if reason:
+            with self.lock:
+                if self.snapshot is snapshot:self.invalidate(reason,cleanup=False)
+            self.gate_failure(reason);self.wakeup.set();yield None;return
+        stack=ExitStack()
+        try:
+            try:
+                repo=stack.enter_context(self.reader())
+                if repo.feed_plan(self.clock())['plan_hash']!=snapshot.plan_hash:reason='source_changed_or_expired'
+            except ERRORS:reason='source_unavailable'
+            if reason:
+                with self.lock:
+                    if self.snapshot is snapshot:self.invalidate(reason,cleanup=False)
+                self.gate_failure(reason);self.wakeup.set()
+            # Caller exceptions are outside the validation exception handler.
+            yield None if reason else snapshot
+        finally:stack.close()
+
+    def private_health(self):
+        with self._metrics_lock:counts=dict(self.gate_failures)
+        return dict(ready=self.snapshot is not None,reason=self.reason,refreshes=self.refreshes,
+                    failures=self.failures,gate_failures=counts)
+
+    def report_private_health(self):
+        try:atomic_write(self.lease.root/'publisher-health.json',json.dumps(self.private_health()).encode())
+        except OSError:LOG.warning('Publisher health report unavailable')
 
     def route_path(self,path):
         if path.partition('?')[0] in {review_api.API_V4,*review_api.RSS_ROUTES}:
@@ -128,12 +210,12 @@ class AutoFeedController(FeedController):
             analyses={};selected={};queue=None;fault=False
             if self.analysis_state is not None and self.analysis_analyzer is not None:
                 if self.analysis_analyzer.mock and self.data_mode!='offline_replay':raise ValueError('Mock analysis requires offline replay')
-                try:queue=stack.enter_context(analysis_reader(self.analysis_state,self.db))
+                try:queue=stack.enter_context(self.analysis_reader())
                 except ERRORS:fault=True
             try:
                 for item in snapshot.data_v2['items']:
                     if queue is None:notice,analysis,state=None,None,'unavailable' if fault else 'not_analyzed'
-                    else:notice,analysis,state=analysis_for(queue,repo,self.analysis_analyzer,rows[item['source_url']]['id'],self.clock())
+                    else:notice,analysis,state=analysis_for(queue,repo,self.analysis_analyzer,rows[item['source_url']]['id'],self.clock(),validation_cache=self.validation_cache)
                     analyses[item['guid']]=(analysis,state)
                     selected[item['guid']]=self.featured_policy.decide(notice,analysis,state)
             except ERRORS:
@@ -158,13 +240,13 @@ class AutoFeedController(FeedController):
                 raise ValueError('Source changed during selection')
             store=Store.__new__(Store);store.db=raw.db
             repo=AnalysisRepository.__new__(AnalysisRepository);repo.store=store;repo.db=raw.db
-            with analysis_reader(self.analysis_state,self.db) as queue:
+            with self.analysis_reader() as queue:
                 if queue.db.execute('PRAGMA journal_mode').fetchone()[0].lower() not in {'delete','truncate','persist'}:
                     raise ValueError('Analysis rollback journaling required for subscriptions')
                 selected={};signatures=[]
                 for item in plan['items']:
                     ident=item['notice_id']
-                    notice,analysis,state=analysis_for(queue,repo,self.analysis_analyzer,ident,self.clock())
+                    notice,analysis,state=analysis_for(queue,repo,self.analysis_analyzer,ident,self.clock(),validation_cache=self.validation_cache)
                     selected[item['guid']]=self.featured_policy.decide(notice,analysis,state)
                     # Reanalysis and pipeline/lease changes invalidate persisted collections,
                     # even when their public decision happens to be unchanged.
@@ -176,6 +258,14 @@ class AutoFeedController(FeedController):
 
     @contextmanager
     def response_gate(self,snapshot,path):
+        try:
+            with self._response_gate(snapshot,path) as response:yield response
+        except (ConnectionError,TimeoutError,InvalidFilter):raise
+        except ERRORS:
+            self.gate_failure('response_validation_or_storage');raise
+
+    @contextmanager
+    def _response_gate(self,snapshot,path):
         route=self.route_path(path)
         if route in {review_api.API_V4,*review_api.RSS_ROUTES}:
             with self.reviewed_gate(snapshot,path) as payload:
@@ -184,14 +274,18 @@ class AutoFeedController(FeedController):
                     body=json.dumps(dict(payload,valid_for_ms=int(remaining*1000),poll_after_ms=5000),ensure_ascii=False,separators=(',',':')).encode('utf-8')
                     yield Snapshot(body,'',snapshot.plan_hash,snapshot.validated_at)
                 elif route==review_api.RSS_ROUTES[0]:
-                    body=review_api.render_rss(payload,path)
+                    with self.reader() as repo:
+                        revisions={r['canonical_url']:r['content_hash'] for r in repo.db.execute('SELECT canonical_url,content_hash FROM notices')}
+                    body=review_api.render_rss(payload,path,source_revisions=revisions)
                     yield Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
                 else:
                     if not self.subscription_ready:raise ValueError('Featured subscription not initialized')
                     with self.selection_gate(snapshot) as (token,selected):
                         with subscription_store.connection(self.subscription_path,self.db) as state:
                             first=subscription_store.read(state,token,selected,self.clock())
-                            body=review_api.render_rss(payload,path,first)
+                            with self.reader() as repo:
+                                revisions={r['canonical_url']:r['content_hash'] for r in repo.db.execute('SELECT canonical_url,content_hash FROM notices')}
+                            body=review_api.render_rss(payload,path,first,source_revisions=revisions)
                             yield Snapshot(body,'"'+hashlib.sha256(body).hexdigest()+'"',snapshot.plan_hash,snapshot.validated_at)
             return
         if route not in rss_v1.ROUTES:
@@ -287,17 +381,14 @@ def serve_command(args):
             from .analysis_models import reference_datetime
             _,queue_policy=configuration(analysis_config,False)
             def review_work():
-                while not stop.is_set():
-                    try:
-                        with JobQueue(analysis_state,args.db,policy=queue_policy) as queue:
-                            result=run_round(queue,analysis_analyzer,reference_time=reference_datetime(),
-                                notice_ids=getattr(args,'analysis_notice_id',None),
-                                runner=lambda a,n,t,e:isolated_run(a,n,t,e,stop_event=stop))
-                        controller.wakeup.set()
-                        if result.get('stop_reason')=='consecutive_format_failures':return
-                        if any(item.get('error') in {'authentication','forbidden','missing_api_key','http_error'} for item in result['handled']):return
-                    except ERRORS:LOG.warning('Classification worker unavailable')
-                    if stop.wait(60):break
+                from .managed_worker import supervise
+                def operation():
+                    with JobQueue(analysis_state,args.db,policy=queue_policy) as queue:
+                        result=run_round(queue,analysis_analyzer,reference_time=reference_datetime(),
+                            notice_ids=getattr(args,'analysis_notice_id',None),
+                            runner=lambda a,n,t,e:isolated_run(a,n,t,e,stop_event=stop))
+                    controller.wakeup.set();return result
+                supervise(operation,stop,lambda health:atomic_write(controller.lease.root/'analysis-worker.json',json.dumps(health).encode()))
             analysis_worker=Thread(target=review_work,name='classification-worker',daemon=True);analysis_worker.start()
         if args.collect_interval:
             from .recheck import collect_cycle, initialize as initialize_rechecks
@@ -319,9 +410,10 @@ def serve_command(args):
                                     trust_env=not args.no_env_proxy,event_sink=store.request_event,stop_event=stop) as fetcher:
                                 collect_cycle(store,fetcher,sources,limit=args.limit,
                                     recheck_limit=getattr(args,'recheck_limit',3),
-                                    request_budget=getattr(args,'request_budget',48),stop_event=stop)
-                    except ERRORS:
-                        LOG.warning('Automatic collection failed; source health gate remains active')
+                                    request_budget=getattr(args,'request_budget',48),stop_event=stop,
+                                    cycle_interval=args.collect_interval)
+                    except ERRORS as exc:
+                        LOG.warning('Automatic collection failed: %s',getattr(exc,'sqlite_errorname',type(exc).__name__))
                     controller.wakeup.set()
                     if stop.wait(args.collect_interval):break
             collector=Thread(target=work,name='official-collector',daemon=True);collector.start()

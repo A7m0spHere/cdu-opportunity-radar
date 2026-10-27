@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "cdu-opportunity-radar"
-version = "0.2.0rc1"
+version = "0.2.0rc3"
 description = "CDU official campus notice aggregation with a student web page and automatic RSS"
 readme = "README.md"
 requires-python = ">=3.11"

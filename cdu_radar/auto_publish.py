@@ -12,6 +12,7 @@ from .analysis_models import AnalysisInput, SHANGHAI, fingerprint, reference_dat
 from .models import official_url, RadarError
 from .sources import load_sources
 from .adapters import ARTICLE_PATH
+from .rule_projection import description_facts
 from .rule_analysis import RuleAnalyzer, deadline_moment
 from .taxonomy import classify, options
 
@@ -113,7 +114,7 @@ def describe(row, publisher, now, analyzer):
     warnings = ['自动分类仅供浏览，不代表官方认定；摘要为原文节选。', '附件正文未解析；完整要求以官方原文为准。']
     result = None
     try:
-        result = analyzer.analyze(notice, reference_time=now)
+        result = description_facts(analyzer,notice,now)
         facts = time_fields(result, notice)
     except (ValueError, TypeError, AttributeError):
         facts = {key:None for key in ('registration_deadline','internal_deadline','registration_start_date')}

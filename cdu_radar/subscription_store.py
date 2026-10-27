@@ -23,7 +23,7 @@ def connection(path, raw_path, *, write=False):
     path = Path(path)
     if any(Path(str(path) + suffix).is_symlink() for suffix in ('', '-journal', '-wal', '-shm')):
         raise ValueError('Unsafe subscription state')
-    db = sqlite3.connect(path.as_uri() + ('?mode=rwc' if write else '?mode=ro'), uri=True, timeout=0)
+    db = sqlite3.connect(path.as_uri() + ('?mode=rwc' if write else '?mode=ro'), uri=True, timeout=5)
     db.row_factory = sqlite3.Row
     try:
         if db.execute('PRAGMA journal_mode').fetchone()[0].lower() not in {'delete', 'truncate', 'persist'}:
@@ -51,9 +51,12 @@ def connection(path, raw_path, *, write=False):
 def persist(db, token, decisions, now):
     for guid, decision in decisions.items():
         if decision['decision'] == 'selected':
-            db.execute('INSERT OR IGNORE INTO first_featured VALUES (?,?)', (guid, now.isoformat()))
-    db.execute('INSERT OR REPLACE INTO collection VALUES (1,?,?)',
-               (token, json.dumps(decisions, ensure_ascii=False, sort_keys=True)))
+            if not db.execute('SELECT 1 FROM first_featured WHERE guid=?',(guid,)).fetchone():
+                db.execute('INSERT INTO first_featured VALUES (?,?)', (guid, now.isoformat()))
+    encoded=json.dumps(decisions,ensure_ascii=False,sort_keys=True)
+    old=db.execute('SELECT token,decisions FROM collection WHERE id=1').fetchone()
+    if not old or old['token']!=token or old['decisions']!=encoded:
+        db.execute('INSERT OR REPLACE INTO collection VALUES (1,?,?)',(token,encoded))
 
 
 def read(db, token, decisions, now):

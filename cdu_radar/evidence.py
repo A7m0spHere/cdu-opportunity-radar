@@ -1,6 +1,8 @@
 """Bounded citation location. No fuzzy, punctuation or semantic matching."""
 from dataclasses import asdict, dataclass
+from collections import OrderedDict
 import re
+import threading
 import unicodedata
 
 
@@ -48,7 +50,28 @@ def normalize(text):
     return unicodedata.normalize("NFC", re.sub(r"\s", "", text))
 
 
+_NORMALIZED=OrderedDict()
+_NORMALIZED_BYTES=0
+_NORMALIZED_LOCK=threading.Lock()
+_NORMALIZED_LIMIT=32*1024*1024
+
 def normalized_with_offsets(text):
+    """Cache only pure Unicode location work; no decision, time or DB state."""
+    global _NORMALIZED_BYTES
+    with _NORMALIZED_LOCK:
+        cached=_NORMALIZED.get(text)
+        if cached is not None:_NORMALIZED.move_to_end(text);return cached
+    value=_normalized_uncached(text)
+    weight=max(256,len(text)*128)
+    if weight<=_NORMALIZED_LIMIT//4:
+        with _NORMALIZED_LOCK:
+            if text not in _NORMALIZED:
+                while _NORMALIZED and _NORMALIZED_BYTES+weight>_NORMALIZED_LIMIT:
+                    old,_=_NORMALIZED.popitem(last=False);_NORMALIZED_BYTES-=max(256,len(old)*128)
+                _NORMALIZED[text]=value;_NORMALIZED_BYTES+=weight
+    return value
+
+def _normalized_uncached(text):
     chars, offsets = [], []
     # Keep original spans for canonical combining sequences and whitespace changes.
     filtered = [(char, i) for i, char in enumerate(text) if not char.isspace()]
@@ -63,7 +86,7 @@ def normalized_with_offsets(text):
         for char in unicodedata.normalize("NFC", cluster):
             chars.append(char); offsets.append((filtered[index][1], filtered[end-1][1]+1))
         index = end
-    return "".join(chars), offsets
+    return "".join(chars), tuple(offsets)
 
 
 def locate(notice, quote, field=""):

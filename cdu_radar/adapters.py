@@ -161,7 +161,10 @@ class VsbAdapter:
         attachments = tuple(link for a in form.find_all("a",href=True)
             if ("/system/_content/download.jsp" in a["href"] or re.search(r"\.(pdf|docx?|xlsx?|pptx?|zip|rar)(?:\?|$)",a["href"],re.I))
             and (link:=readable_link(a)))
-        for unwanted in body.select("script, style, noscript, img, iframe"):
+        unreadable=('pdf_rendered_images' if any('vsb_pdf_image_data' in s.get_text() for s in body.select('script'))
+                    else 'embedded_document' if body.select('iframe,object,embed') or attachments
+                    else 'image_only' if body.find('img') else 'short_content')
+        for unwanted in body.select("script, style, noscript, img, iframe, object, embed"):
             unwanted.decompose()
         # Keep inline Chinese spans joined, while retaining paragraph/table boundaries.
         for block in body.find_all(["p", "div", "li", "tr", "h1", "h2", "h3"]):
@@ -172,7 +175,10 @@ class VsbAdapter:
             cell.append(" ")
         content = "\n".join(line for raw in body.get_text().splitlines() if (line := clean_text(raw)))
         if len(content) < 20:
-            raise ParseError(f"{url}: body empty, image-only, or too short")
+            if re.search(r'公示期已过|公示已结束|公示期已结束',content):unreadable='expired_stub'
+            error=ParseError(f"{url}: body empty, image-only, or too short")
+            error.detail=unreadable
+            raise error
         return Article(title, published, content,links,attachments)
 
 

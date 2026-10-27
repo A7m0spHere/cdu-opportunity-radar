@@ -1,6 +1,7 @@
 """Persistent, bounded original-page checks independent of list-page discovery."""
 from dataclasses import replace
 from datetime import timedelta, timezone
+import math
 from urllib.parse import urlsplit
 
 from .adapters import ARTICLE_PATH, article_adapter
@@ -115,8 +116,8 @@ def recheck(store, fetcher, sources, *, limit=3, stop_event=None, clock=referenc
     return results
 
 
-def collect_cycle(store, fetcher, sources, *, limit=3, recheck_limit=3, request_budget=48, stop_event=None):
-    """Half the wire-request budget is reserved for due originals, including robots."""
+def collect_cycle(store, fetcher, sources, *, limit=3, recheck_limit=3, request_budget=48, stop_event=None, cycle_interval=None):
+    """Share one wire budget; an overdue backlog gets first access to it."""
     from .collect import collect
     if request_budget < 6 or request_budget > 500:
         raise ValueError('request budget must be between 6 and 500')
@@ -130,21 +131,33 @@ def collect_cycle(store, fetcher, sources, *, limit=3, recheck_limit=3, request_
     start = fetcher.request_count
     original_limit = fetcher.request_limit
     ceiling = min(original_limit, start+request_budget) if original_limit is not None else start+request_budget
-    fetcher.request_limit = min(ceiling, start + request_budget // 2)
-    discovery = collect(store, fetcher, sources, limit=limit, max_pages=1,
-                        stop_event=stop_event, skip_known=True)
-    if discovery:
-        # A source cut off before its first article gets the next round's full
-        # allowance; a source that made progress yields to the following one.
-        last = next(i for i,s in enumerate(sources) if s.id==discovery[-1]['source'])
-        progress = sum(discovery[-1][key] for key in ('inserted','updated','unchanged','failed'))
-        next_index = last if discovery[-1].get('error_category')=='budget' and not progress else last+1
-        with store.db:
-            store.db.execute('INSERT OR REPLACE INTO collection_cursor VALUES (1,?)',
-                             (sources[next_index%len(sources)].id,))
-    fetcher.request_limit = ceiling
-    checks = recheck(store, fetcher, sources, limit=recheck_limit, stop_event=stop_event)
-    # The same Fetcher can be reused for another round; its wire counter remains
-    # cumulative, but this round's temporary ceiling must not leak to the next.
-    fetcher.request_limit = original_limit
-    return {'discovery':discovery, 'rechecks':checks, 'requests':fetcher.request_count-start}
+    due=store.db.execute('SELECT count(*) FROM notice_rechecks WHERE next_check_at<=?',(stamp(reference_datetime()),)).fetchone()[0]
+    target=recheck_limit
+    if cycle_interval is not None:
+        if not math.isfinite(cycle_interval) or cycle_interval<60:raise ValueError('Invalid collection interval')
+        # Capacity for the full inventory each day plus 50% headroom. Actual
+        # wire calls (including robots) remain inside the unchanged total cap.
+        inventory=store.db.execute("SELECT count(*) FROM notice_rechecks q LEFT JOIN notice_health h ON h.notice_id=q.notice_id WHERE COALESCE(h.status,'')!='withdrawn'").fetchone()[0]
+        target=min(request_budget,max(target,math.ceil(inventory*cycle_interval/INTERVAL.total_seconds()*1.5),due))
+    checks=[];rechecks_first=due>recheck_limit or cycle_interval is not None
+    # Backlog gets first access to two thirds of the existing wire budget.
+    # Short, committed claims remain independent of slow HTTP operations.
+    try:
+        if rechecks_first:
+            fetcher.request_limit=min(ceiling,start+2*request_budget//3)
+            checks=recheck(store,fetcher,sources,limit=target,stop_event=stop_event)
+            fetcher.request_limit=ceiling
+        else:fetcher.request_limit=min(ceiling,start+request_budget//2)
+        discovery=collect(store,fetcher,sources,limit=limit,max_pages=1,
+                          stop_event=stop_event,skip_known=True,tolerate_failures=3)
+        if discovery:
+            last = next(i for i,s in enumerate(sources) if s.id==discovery[-1]['source'])
+            progress = sum(discovery[-1][key] for key in ('inserted','updated','unchanged','failed'))
+            next_index = last if discovery[-1].get('error_category')=='budget' and not progress else last+1
+            with store.db:
+                store.db.execute('INSERT OR REPLACE INTO collection_cursor VALUES (1,?)',
+                                 (sources[next_index%len(sources)].id,))
+        fetcher.request_limit = ceiling
+        if not rechecks_first:checks = recheck(store, fetcher, sources, limit=target, stop_event=stop_event)
+        return {'discovery':discovery, 'rechecks':checks, 'requests':fetcher.request_count-start,'recheck_target':target,'due_before':due}
+    finally:fetcher.request_limit=original_limit

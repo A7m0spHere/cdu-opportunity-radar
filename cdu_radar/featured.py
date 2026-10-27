@@ -4,11 +4,14 @@ Selection is an optional subset of quality-qualified originals. It never grants
 publication permission or changes the M7 proposal/human history.
 """
 from contextlib import contextmanager
+from collections import OrderedDict
+from copy import deepcopy
 from importlib.resources import files
 import json
 from pathlib import Path
 import re
 import sqlite3
+import threading
 
 from .analysis_models import fingerprint
 from .async_contract import validate
@@ -103,7 +106,29 @@ class FeaturedPolicy:
         return output
 
 
-def analysis_for(queue, repo, analyzer, notice_id, now):
+class ValidationCache:
+    """Bounded cache of v3's time-independent evidence/semantic validation.
+
+    Raw input and complete stored result are part of the key. Live DB read
+    transactions, original age/withdrawal checks and queue state are never cached.
+    """
+    def __init__(self,maximum=8*1024*1024):
+        self.maximum=maximum;self.size=0;self.values=OrderedDict();self.lock=threading.Lock()
+    def get(self,key):
+        with self.lock:
+            item=self.values.get(key)
+            if item is None:return None
+            self.values.move_to_end(key);return deepcopy(item[0])
+    def put(self,key,value):
+        weight=max(1024,len(key[-1].encode('utf-8'))*8)
+        if weight>self.maximum:return
+        with self.lock:
+            if key in self.values:return
+            while self.values and self.size+weight>self.maximum:
+                _,(_,old)=self.values.popitem(last=False);self.size-=old
+            self.values[key]=(deepcopy(value),weight);self.size+=weight
+
+def analysis_for(queue, repo, analyzer, notice_id, now, *, validation_cache=None):
     notice=repo.input(notice_id)
     row=queue.db.execute('SELECT * FROM jobs WHERE notice_id=? AND input_hash=? AND pipeline_version=?',
                          (notice_id,notice.input_hash,analyzer.version)).fetchone()
@@ -115,9 +140,16 @@ def analysis_for(queue, repo, analyzer, notice_id, now):
     if state=='running' and row['lease_until']<=queue.clock():return notice,None,'lease_expired'
     if state not in {'succeeded','partial'}:return notice,None,state
     try:
+        use_cache=(validation_cache is not None and getattr(getattr(analyzer,'config',None),'analysis_mode',None)=='automatic_review_v3' and isinstance(row['result'],str))
+        implementation=getattr(analyzer.validate,'__func__',analyzer.validate)
+        key=(analyzer.version,implementation,notice.input_hash,row['id'],row['updated_at'],row['mode'],row['result']) if use_cache else None
+        if key is not None:
+            checked=validation_cache.get(key)
+            if checked is not None:return notice,checked,checked['state']
         cached=json.loads(row['result'])
         supplied,_=analyzer.prepare(notice)
         checked=analyzer.validate(cached['proposal'],notice,supplied,now)
+        if key is not None:validation_cache.put(key,checked)
         return notice,checked,checked['state']
     except (ValueError,TypeError,KeyError):return notice,None,'failed'
 

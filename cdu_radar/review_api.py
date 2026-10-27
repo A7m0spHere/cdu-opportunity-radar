@@ -98,7 +98,7 @@ def project(payload, path, rows, analyses, decisions, policy):
         subscription={'available':True,'url':canonical_path(f),'reason':None})
 
 
-def render_rss(payload,path,first_featured=None):
+def render_rss(payload,path,first_featured=None,*,source_revisions=None):
     """The input is already filtered with exactly the effective v4 classifications."""
     featured=path.partition('?')[0]==RSS_ROUTES[1]
     stats=scope_stats(payload['items'])
@@ -120,6 +120,11 @@ def render_rss(payload,path,first_featured=None):
     by_guid={i['guid']:i for i in payload['items']}
     for item in channel.findall('item'):
         entry=by_guid[item.findtext('guid')]
+        if source_revisions is not None:
+            revision=source_revisions[entry['source_url']]
+            if not re.fullmatch(r'[a-f0-9]{64}',revision):raise ValueError('Invalid original revision')
+            ET.SubElement(item,'{urn:cdu-radar:rss:v2}content_revision').text=revision
+            ET.SubElement(item,'{urn:cdu-radar:rss:v2}excerpt').text=entry['summary']
         for name,value in [('type',entry['classification']['type']),('domains',','.join(entry['classification']['domains'])),
                            ('topics',','.join(entry['classification']['topics'])),('classification_state',entry['classification_review']['state']),
                            ('undergraduate_state',entry['undergraduate']['state'])]:

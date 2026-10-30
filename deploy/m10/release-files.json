@@ -1,5 +1,5 @@
 {
-  "version": "0.2.0rc3",
+  "version": "0.2.0rc4",
   "files": [
     "README.md",
     "pyproject.toml",
@@ -9,6 +9,7 @@
     ".github/workflows/offline-ci.yml",
     ".github/workflows/dependency-audit.yml",
     "cdu_radar/__init__.py",
+    "tests/test_recheck_publication.py",
     "cdu_radar/async_cli.py",
     "cdu_radar/async_contract.py",
     "cdu_radar/async_worker.py",

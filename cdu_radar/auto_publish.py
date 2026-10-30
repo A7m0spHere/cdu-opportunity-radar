@@ -205,9 +205,11 @@ class AutoRepository:
             item['first_published_at']=state['first_published_at'] if state else None
             if state and state['guid']!=item['guid']:raise ValueError('Stored automatic identity mismatch')
             items.append(item)
-        # Do not include wall clock in the fingerprint: only effective state changes invalidate it.
+        # Successful rechecks renew provenance without changing publication eligibility.
+        # Health status/age/hash are still validated above on every live plan.
+        publication_items=[{key:value for key,value in item.items() if key!='source_checked_at'} for item in items]
         return {'items':items,'excluded':excluded,'filter_options':filter_options,
-            'plan_hash':fingerprint([items,excluded,filter_options]),
+            'plan_hash':fingerprint([publication_items,excluded,filter_options]),
             'statuses':dict(Counter(i['registration_status'] for i in items)),
             'listings':dict(Counter(i['listing'] for i in items))}
 

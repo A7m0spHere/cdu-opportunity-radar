@@ -1,6 +1,7 @@
 """Automatic RSS on the M3-A lease, rollback-lock response gate and 503 policy."""
 from contextlib import contextmanager, ExitStack
 from collections import Counter
+from dataclasses import replace
 import hashlib
 import json
 from pathlib import Path
@@ -154,7 +155,8 @@ class AutoFeedController(FeedController):
         finally:self.lock.release()
         reason=None
         if self.stop_event.is_set():reason='stopped'
-        elif snapshot is None or self.monotonic()-snapshot.validated_at>self.max_age:reason='validation_expired'
+        elif snapshot is None:reason='snapshot_missing'
+        elif self.monotonic()-snapshot.validated_at>self.max_age:reason='validation_expired'
         if reason:
             with self.lock:
                 if self.snapshot is snapshot:self.invalidate(reason,cleanup=False)
@@ -163,7 +165,18 @@ class AutoFeedController(FeedController):
         try:
             try:
                 repo=stack.enter_context(self.reader())
-                if repo.feed_plan(self.clock())['plan_hash']!=snapshot.plan_hash:reason='source_changed_or_expired'
+                plan=repo.feed_plan(self.clock())
+                if plan['plan_hash']!=snapshot.plan_hash:reason='source_changed_or_expired'
+                else:
+                    checks={item['guid']:item['source_checked_at'] for item in plan['items']}
+                    cached={item['guid']:item['source_checked_at'] for item in snapshot.data['items']}
+                    if checks!=cached:
+                        # Project renewed checks from this response's locked transaction.
+                        # Keep the publisher's validation age and global snapshot unchanged.
+                        refreshed_at=snapshot.data['refreshed_at']
+                        data=public_snapshot(plan['items'],refreshed_at=refreshed_at,data_mode=self.data_mode)
+                        data_v2=public_snapshot_v2(plan['items'],refreshed_at=refreshed_at,data_mode=self.data_mode,filter_options=plan['filter_options'])
+                        snapshot=replace(snapshot,data=data,data_v2=data_v2)
             except ERRORS:reason='source_unavailable'
             if reason:
                 with self.lock:

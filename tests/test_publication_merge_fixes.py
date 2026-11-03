@@ -10,7 +10,7 @@ from cdu_radar.analysis_service import analyze_one
 from cdu_radar.cli import main
 from cdu_radar.publication import snapshot
 from cdu_radar.rule_analysis import deadline_moment
-from test_publication import setup, draft, decide, export, NOW
+from test_publication import setup, draft, decide, export, NOW, FUTURE_BODY, FUTURE_VALID_UNTIL
 
 
 def legacy_long_approval(pub, ident):
@@ -119,14 +119,15 @@ def test_invalid_label_is_an_advisory_error_not_a_publication_decision(store):
 
 
 def test_cli_show_approve_and_revoke_work_with_broken_advisory_cache(store,tmp_path,capsys):
-    ident,pub=setup(store);n=pub.repository.input(ident)
+    ident,pub=setup(store,body=FUTURE_BODY);n=pub.repository.input(ident)
     with pub.db:
         pub.db.execute('INSERT INTO notice_analyses (notice_id,content_hash,input_hash,analyzer_version,analyzed_at,payload) VALUES (?,?,?,?,?,?)',
             (ident,n.content_hash,n.input_hash,'fixture-corrupt',NOW.isoformat(),'{private-fixture-body'))
     path=Path(pub.db.execute('PRAGMA database_list').fetchone()[2])
     assert main(['review','show',str(ident),'--db',str(path)])==0
     shown=json.loads(capsys.readouterr().out);assert shown['notice']['content'] and shown['advisory_errors']
-    d=tmp_path/'draft.json';d.write_text(json.dumps(draft(pub,ident)),encoding='utf-8')
+    payload=draft(pub,ident);payload['valid_until']=FUTURE_VALID_UNTIL
+    d=tmp_path/'draft.json';d.write_text(json.dumps(payload),encoding='utf-8')
     actions=[['review','approve',str(ident),'--draft',str(d),'--ack-unknown'],['review','revoke',str(ident)]]
     for action in actions:
         cmd=action+['--db',str(path),'--reviewer','fixture-admin','--reason','Offline decision']

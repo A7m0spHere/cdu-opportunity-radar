@@ -25,6 +25,9 @@ from test_llm import seed,BODY
 from test_collect_storage import transport_for
 
 NOW=reference_datetime('2026-10-14')
+# CLI paths run against real wall-clock time, so their fixture dates must stay far in the future.
+FUTURE_BODY='参赛对象：我校本科生。允许使用AI。报名截止：2099年11月1日。'
+FUTURE_VALID_UNTIL='2099-10-30T23:59:59+08:00'
 
 
 def setup(store,body=BODY,ident=1):
@@ -277,8 +280,9 @@ def test_readonly_cli_previews_do_not_migrate_or_change_database(store,tmp_path,
 
 
 def test_cli_requires_exact_confirmation_and_protects_raw_feed(store,tmp_path,capsys):
-    nid,pub=setup(store);path=Path(pub.db.execute('PRAGMA database_list').fetchone()[2])
-    d=tmp_path/'draft.json';d.write_text(json.dumps(draft(pub,nid),ensure_ascii=False),encoding='utf-8')
+    nid,pub=setup(store,body=FUTURE_BODY);path=Path(pub.db.execute('PRAGMA database_list').fetchone()[2])
+    payload=draft(pub,nid);payload['valid_until']=FUTURE_VALID_UNTIL
+    d=tmp_path/'draft.json';d.write_text(json.dumps(payload,ensure_ascii=False),encoding='utf-8')
     cmd=['review','approve',str(nid),'--db',str(path),'--draft',str(d),'--reviewer','admin','--reason','已核验','--ack-unknown']
     assert main(cmd)==0;plan=json.loads(capsys.readouterr().out)
     before=hashlib.sha256(path.read_bytes()).hexdigest()

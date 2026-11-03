@@ -51,4 +51,4 @@ AstrBot 4.25.5 核心还会触发全局插件加载/卸载事件，即使指定�
 
 离线测试位于 tests/test_cdu_radar_plugin.py：Mock SDK、HTTP MockTransport、M3-A 隔离合成 Feed。测试不需要安装 AstrBot，也不发送 QQ。4.25.5 的官方 Context.send_message 返回语义见 [固定版本源码](https://github.com/AstrBotDevs/AstrBot/blob/v4.25.5/astrbot/core/star/context.py)。元数据版本范围不代表已兼容所有定制核心。
 
-本地需求与生产隔离方案详见仓库 docs/M3B4_MINIMAL_PLUGIN.md。插件 ZIP、真实目标和私有去重库不进入 Git；默认关闭的源码可以提交。
+本地需求与生产隔离方案详见仓库 docs/archive/M3B4_MINIMAL_PLUGIN.md。插件 ZIP、真实目标和私有去重库不进入 Git；默认关闭的源码可以提交。

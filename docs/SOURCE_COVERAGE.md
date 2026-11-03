@@ -1,6 +1,6 @@
 # 来源目录快照（2026-10-18）
 
-本页由离线 source-coverage 生成，当前教务公告接入证据见 [接入记录](TEACHING_SOURCE_RESULTS.md)。目录其余观察仍来自各条 observation_at；分母仅是现有登记，不代表全校完整目录或实时可达性。
+本页由离线 source-coverage 生成，当前教务公告接入证据见 [接入记录](archive/TEACHING_SOURCE_RESULTS.md)。目录其余观察仍来自各条 observation_at；分母仅是现有登记，不代表全校完整目录或实时可达性。
 
 # 官方来源覆盖盘点
 

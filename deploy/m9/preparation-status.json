@@ -15,7 +15,7 @@
   "backup_restore": "passed",
   "wheel_upgrade_rollback": "passed",
   "ci": {
-    "commit": "061d7ede8d0d78c388b9654729a63c1d89b06af5",
+    "commit": "442235160497e0172b15d496599afe9d4cdaae6d",
     "conclusion": "success",
     "url": "https://github.com/A7m0spHere/cdu-opportunity-radar/actions/runs/39035853752",
     "covers_completion_changes": false

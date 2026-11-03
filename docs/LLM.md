@@ -1,10 +1,10 @@
 # M2-B 模型筛选与对照评测
 
-M2-C 的发布审核只读取模型缓存及字段审计，技术失败不会隐藏原文或阻止人工审核。预测、评测标签和旧分析审核都不能进入正式 RSS；管理员另行批准发布快照。见 [发布指南](PUBLICATION.md)。review/show/export-approved-rss 不需要 Provider、Key 或新的 API 请求。
+M2-C 的发布审核只读取模型缓存及字段审计，技术失败不会隐藏原文或阻止人工审核。预测、评测标签和旧分析审核都不能进入正式 RSS；管理员另行批准发布快照。见 [发布指南](archive/PUBLICATION.md)。review/show/export-approved-rss 不需要 Provider、Key 或新的 API 请求。
 
-M2-B.3 的 screening_v2 事实协议增加本地 `validation_version` 和 `field_validation`，逐字段保留模型提议、可信值、引用索引、原因和错误路径。请求 Schema 保持 v2，Prompt/实现形成新的缓存版本。分类不再因参与机会或日期未知被连带清空；错误日期可局部降级，但时间依据不足仍阻止认定开放，未核实推荐始终待审。旧记录可原样只读查看；详细版本、测试及 ID 34 数据边界见 [M2-B.3 离线报告](M2B3_OFFLINE.md)。
+M2-B.3 的 screening_v2 事实协议增加本地 `validation_version` 和 `field_validation`，逐字段保留模型提议、可信值、引用索引、原因和错误路径。请求 Schema 保持 v2，Prompt/实现形成新的缓存版本。分类不再因参与机会或日期未知被连带清空；错误日期可局部降级，但时间依据不足仍阻止认定开放，未核实推荐始终待审。旧记录可原样只读查看；详细版本、测试及 ID 34 数据边界见 [M2-B.3 离线报告](archive/M2B3_OFFLINE.md)。
 
-模型分析与人工标签、审批、原始通知和 RSS 分开。LLM 不读取人工答案，没有工具或附件下载权限。M2-B.1 的报告分别显示技术流水线、明确模型判断与系统故障保护；`retain + uncertain` 包括故障保留，只属于系统候选指标。完整模型指标在失败/未知导致覆盖不足时留空。详细故障归因、协议能力边界、初筛 Schema 与待批准计划见 [M2-B.1 离线报告](M2B1_OFFLINE.md)。
+模型分析与人工标签、审批、原始通知和 RSS 分开。LLM 不读取人工答案，没有工具或附件下载权限。M2-B.1 的报告分别显示技术流水线、明确模型判断与系统故障保护；`retain + uncertain` 包括故障保留，只属于系统候选指标。完整模型指标在失败/未知导致覆盖不足时留空。详细故障归因、协议能力边界、初筛 Schema 与待批准计划见 [M2-B.1 离线报告](archive/M2B1_OFFLINE.md)。
 
 ## 配置
 
@@ -120,8 +120,8 @@ DeepSeek 的 [Thinking Mode](https://api-docs.deepseek.com/guides/thinking_mode/
 
 首轮 36 条真实对照仅 5 条通过严格校验、31 条失败（86.11%）。规则 F1=42.86%，LLM 加失败保留的 F1 同为 42.86%；后者 Recall=100% 不代表模型能力更好。详细过程、错误数量及 50 次 POST 的已知 183905 Token 消耗见 VALIDATION.md；没有单价，费用未知。当前不适合自动推荐或正式 RSS。
 
-M2-B.2 审批前只完成离线准备，真实请求为 0；两关样本、固定预算、参数、诊断留存及审批边界见 [M2B2_TEST_PLAN.md](M2B2_TEST_PLAN.md)。专用 probe 默认为 dry-run，真实发送要求明确批准和一致的计划指纹，在独立 SQLite 副本中执行，任一技术失败停止全部剩余请求。
+M2-B.2 审批前只完成离线准备，真实请求为 0；两关样本、固定预算、参数、诊断留存及审批边界见 [M2B2_TEST_PLAN.md](archive/M2B2_TEST_PLAN.md)。专用 probe 默认为 dry-run，真实发送要求明确批准和一致的计划指纹，在独立 SQLite 副本中执行，任一技术失败停止全部剩余请求。
 
-随后获批的 M2-B.2 第一关只发送 ID 34：HTTP 200、finish_reason=stop，最终 content 带 Markdown 代码围栏，裸 JSON 校验失败。累计 1 次 POST、1764 Token，第二关未执行，未重试。详见 [M2B2_RESULTS.md](M2B2_RESULTS.md)；Schema、引用与业务判断没有进入真实验证，原人工标签/数据库不变。
+随后获批的 M2-B.2 第一关只发送 ID 34：HTTP 200、finish_reason=stop，最终 content 带 Markdown 代码围栏，裸 JSON 校验失败。累计 1 次 POST、1764 Token，第二关未执行，未重试。详见 [M2B2_RESULTS.md](archive/M2B2_RESULTS.md)；Schema、引用与业务判断没有进入真实验证，原人工标签/数据库不变。
 
-M2-B.2a 已加入严格包装兼容：优先纯 JSON Object，仅允许完整包裹全部响应的单个三反引号 json/无语言块。记录 direct_json 与 normalized_markdown_fence 分开的指标，非法 JSON、其他包装及后续 Schema/引用/事实错误仍拒绝。v1/v2 Prompt 只加强格式指令并更新 Prompt 指纹，Schema 与业务规则保持原样。ID 34 仅有截断脱敏片段，不能完整离线重放；本轮新增付费请求 0。边界、324 项回归结果及待批准单条计划见 [M2B2A_JSON_COMPAT.md](M2B2A_JSON_COMPAT.md)。
+M2-B.2a 已加入严格包装兼容：优先纯 JSON Object，仅允许完整包裹全部响应的单个三反引号 json/无语言块。记录 direct_json 与 normalized_markdown_fence 分开的指标，非法 JSON、其他包装及后续 Schema/引用/事实错误仍拒绝。v1/v2 Prompt 只加强格式指令并更新 Prompt 指纹，Schema 与业务规则保持原样。ID 34 仅有截断脱敏片段，不能完整离线重放；本轮新增付费请求 0。边界、324 项回归结果及待批准单条计划见 [M2B2A_JSON_COMPAT.md](archive/M2B2A_JSON_COMPAT.md)。

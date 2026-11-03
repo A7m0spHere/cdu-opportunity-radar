@@ -1,6 +1,6 @@
 # CDU Opportunity Radar · 校园机会雷达
 
-当前服务器运行 **0.2.0rc3**：[部署与观察](docs/SERVER_DEPLOYMENT.md) · [RSS 锁竞争与复查修复](docs/RECOVERY_RESULTS_20261027.md) · [Issue 收尾核查](docs/ISSUE_AUDIT_20261027.md)。首次安装准备见 [rc1 安装与回滚](docs/RELEASE_0_2_0_RC1.md)，依赖与 TLS 修复见 [#27 记录](docs/SECURITY_27_RESULTS.md)。
+当前服务器运行 **0.2.0rc4**（2026-10-30 上线）：[部署与观察](docs/SERVER_DEPLOYMENT.md) · [rc4 上线记录](docs/archive/RECOVERY_RESULTS_20261030.md) · [Issue 收尾核查](docs/ISSUE_AUDIT_20261027.md)。首次安装准备见 [rc1 安装与回滚](docs/RELEASE_0_2_0_RC1.md)，依赖与 TLS 修复见 [#27 记录](docs/SECURITY_27_RESULTS.md)。
 
 [![Offline CI](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml/badge.svg)](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/workflows/offline-ci.yml)
 
@@ -8,7 +8,7 @@
 
 **可信来源自动采集 · 网页直接阅读 · RSS 订阅 · 无需逐条人工审批**
 
-Python 3.11+ · [AGPL-3.0-only](LICENSE) · 本地 MVP，有限体验准备阶段
+Python 3.11+ · [AGPL-3.0-only](LICENSE) · 单机部署，有限体验阶段
 
 [快速开始](#快速开始) · [信息与接口](#信息与接口) · [当前边界](#当前边界) · [文档](#文档) · [许可证](#许可证)
 
@@ -72,13 +72,13 @@ python3 -m venv .venv
 
 网页约每 5 秒获取一次数据，这与访问官方站点的采集间隔分别控制。默认自动路径不调用 LLM，不需要模型 Key、QQ、AstrBot 或 NapCat。
 
-独立的[私有异步分析 worker](docs/ASYNC_ANALYSIS.md) 支持离线 Mock、预算、重试和证据校验；网页/RSS 读取不触发模型调用。M7 的历史离线验证见 [M7 验收](docs/M7_RESULTS.md)，本次分类复核的真实调用和采用情况见 [分类复核](docs/CLASSIFICATION_REVIEW.md)。
+独立的[私有异步分析 worker](docs/ASYNC_ANALYSIS.md) 支持离线 Mock、预算、重试和证据校验；网页/RSS 读取不触发模型调用。M7 的历史离线验证见 [M7 验收](docs/archive/M7_RESULTS.md)，本次分类复核的真实调用和采用情况见 [分类复核](docs/CLASSIFICATION_REVIEW.md)。
 
 新版学生页读取 `/api/notices/v4?audience=undergraduate`，筛选订阅使用 `/rss/v2/all.xml` 与 `/rss/v2/featured.xml`，共用受众范围、原文要点和有效分类。API 默认或 `audience=all` 仍返回全部合格原文；旧 v1/v2/v3 JSON 与 RSS v1 保留兼容投影。启用 v3 worker 后，LLM 自动判断分类、综合重要精选、本科生阅读价值及办理事项，程序核验引用，缺失或失败时回退原文规则；公开读取不触发模型。启动方法见 [LLM 自动化](docs/LLM_AUTOMATION.md)，真实结果和标注分歧见 [本轮验收](docs/M10B_LLM_RESULTS.md)。
 
 ## 信息与接口
 
-短时本机闭环、一次只读探针、停止恢复及后续服务器 48 小时交接见 [M10-C 本机验收](docs/M10C_LOCAL.md)。本机真实采集最多执行 3 轮，不默认持续运行。
+本机短时闭环、一次只读探针与停止恢复见 [M10-C 本机验收](docs/M10C_LOCAL.md)；服务器侧连续运行已于 2026-10-29 通过 51 小时 5 分验收，见 [服务器连续运行验收](docs/archive/M10C_SERVER_RESULTS_20261029.md)。本机真实采集最多执行 3 轮，不默认持续运行。
 
 ```text
 既有可信官方来源 → 采集与解析 → 分类、去重及质量检查 → 网页 / RSS
@@ -105,12 +105,12 @@ python3 -m venv .venv
 
 ## 当前边界
 
-- **来源覆盖**：当前实现并验证了 12 个采集栏目，包含教务处的教务公告；学籍、选课、考试、毕业论文等普通教务通知按栏目收录，不以 AI 关键词筛选。来源目录中的候选栏目、可访问页面和 `pending` 单位不等于可自动发布来源。[来源清单](docs/SOURCES.md) · [教务处接入记录](docs/TEACHING_SOURCE_RESULTS.md)
+- **来源覆盖**：当前实现并验证了 12 个采集栏目，包含教务处的教务公告；学籍、选课、考试、毕业论文等普通教务通知按栏目收录，不以 AI 关键词筛选。来源目录中的候选栏目、可访问页面和 `pending` 单位不等于可自动发布来源。[来源清单](docs/SOURCES.md) · [教务处接入记录](docs/archive/TEACHING_SOURCE_RESULTS.md)
 - **采集覆盖**：定时任务有文章和页数上限，尚无完整的跨轮补采与旧通知复查调度；集中新增或较早通知更新可能未被覆盖。
 - **有效性**：最近成功原文检查超过 72 小时的通知停止公开，等待重新采集。数据库中的历史记录保留；历史列表也受有效性检查约束。
 - **内容理解**：摘要为原文节选，日期与资格采用保守规则。附件仅记录名称和链接，尚未读取其正文；多赛道或不明确的条件保持未知。
 - **访问方式**：核心服务只监听环回地址，`127.0.0.1` 仅供服务所在设备访问。另有须显式启用、按具体设备 IP 限制的[局域网预览方案](docs/LAN_PREVIEW.md)。
-- **验证范围**：Windows 本机、手机尺寸视口、Linux 原生与隔离 Nginx/TLS 已验证，Windows 经 SSH 跨机 RSS 增量通过；手机/同 Wi-Fi LAN 与对应现场反馈已暂缓，长期无人值守运行尚未验收。部署准备及同 schema 代码回退演练已完成，见 [M9 完成记录](docs/M9_COMPLETION_RESULTS.md)；目前没有生产部署或公网体验站。
+- **验证范围**：Windows 本机、手机尺寸视口、Linux 原生与隔离 Nginx/TLS 已验证，Windows 经 SSH 跨机 RSS 增量通过；手机/同 Wi-Fi LAN 与对应现场反馈已暂缓，长期无人值守运行尚未验收。部署准备及同 schema 代码回退演练已完成，见 [M9 完成记录](docs/M9_COMPLETION_RESULTS.md)；已部署 0.2.0rc4 并在公网只读运行（2026-10-30 上线，见 [rc4 上线记录](docs/archive/RECOVERY_RESULTS_20261030.md)）；公开 Beta 放行条件仍未齐，见 [开发计划](docs/PLAN.md)。
 
 使用本地 SQLite 回滚日志模式，服务拒绝 WAL；数据库与服务状态目录分开放置。不要把仓库、数据库或日志目录作为静态网站公开。正文链接由浏览器直接访问官方网页，本服务不自动报名、登录或收集学生个人资料。
 
@@ -125,7 +125,7 @@ python3 -m venv .venv
 
 Linux 将解释器替换为 `.venv/bin/python`。常规测试使用隔离数据库、裁剪 HTML、Mock 与环回 HTTP，不访问外网或调用付费模型。`requirements-lock.txt` 是已验证环境的依赖快照，不代表所有平台均已通过。
 
-PR 与 main push 的离线 CI 覆盖 Windows / Ubuntu、Python 3.11 / 3.12，并从安装后的 wheel 检查 CLI 与网页静态资源。CI 不替代 Linux 实机、手机或生产长期运行验收。[原文复查机制与验证说明](docs/M5A_RECHECK_CI.md)。
+PR 与 main push 的离线 CI 覆盖 Windows / Ubuntu、Python 3.11 / 3.12，并从安装后的 wheel 检查 CLI 与网页静态资源。CI 不替代 Linux 实机、手机或生产长期运行验收。[原文复查机制与验证说明](docs/archive/M5A_RECHECK_CI.md)。
 
 复现实采可使用 `scripts/validate_trial_live.py --directory artifacts/trial-new`，须通过上述虚拟环境 Python 从仓库根目录执行，输出目录必须不存在。**该脚本会访问既有官方来源**；测试数据库、日志与采集结果留在被 Git 忽略的本地目录。真实 HTML 夹具的裁剪和出处见 [样本说明](tests/fixtures/README.md)。
 
@@ -135,19 +135,25 @@ PR 与 main push 的离线 CI 覆盖 Windows / Ubuntu、Python 3.11 / 3.12，并
 
 ## 文档
 
+**文档总入口：[docs/README.md](docs/README.md)**。它说明当前该先读哪些文件、每份文件维护什么事实、历史报告在哪、哪些内容仅供追溯。
+
 | 主题 | 入口 |
 | --- | --- |
-| 学生页运行、JSON 契约与离线预览 | [STUDENT_PAGE](docs/STUDENT_PAGE.md) |
+| 系统结构、模块职责与全局不变量 | [ARCHITECTURE](docs/ARCHITECTURE.md) |
 | 自动发布、来源与时间状态 | [AUTO_PUBLICATION](docs/AUTO_PUBLICATION.md) |
-| 局域网预览、手动验证与停止 | [LAN_PREVIEW](docs/LAN_PREVIEW.md) |
-| 电脑端、服务器验收与部署准备 | [M5-C 电脑验收](docs/M5C_DESKTOP_RESULTS.md) · [M9 服务器验收](docs/M9_SERVER_RESULTS.md) · [M9 部署设计](docs/DEPLOYMENT_PREPARATION.md) · [M9 完成记录](docs/M9_COMPLETION_RESULTS.md) |
-| 最近真实采集和测试证据 | [M4-D 验收](docs/M4D_RESULTS.md) |
-| 只读质量报告与校级来源试点 | [质量报告](docs/QUALITY_REPORT.md) · [M5-B 结果](docs/M5B_RESULTS.md) |
-| 产品覆盖、多维分类与筛选 | [覆盖计划](docs/PRODUCT_SCOPE.md) · [目录盘点](docs/SOURCE_COVERAGE.md) · [v2 契约](docs/TAXONOMY_V1.md) · [M6 验收](docs/M6_RESULTS.md) |
-| 架构、来源目录与开发计划 | [架构](docs/ARCHITECTURE.md) · [来源](docs/SOURCES.md) · [计划](docs/PLAN.md) |
-| 历史分析和发布设计 | [分析契约](docs/ANALYSIS_CONTRACT.md) · [旧审批设计](docs/PUBLICATION.md) · [路线冻结决策](docs/M3B8_ROUTE_DECISION.md) |
+| 学生页运行、JSON 契约与离线预览 | [STUDENT_PAGE](docs/STUDENT_PAGE.md) |
+| 参数化 RSS 与定向消费 | [RSS_V1](docs/RSS_V1.md) · [RSS_CONSUMER](docs/RSS_CONSUMER.md) |
+| 分类、精选与标注评测 | [CLASSIFICATION_REVIEW](docs/CLASSIFICATION_REVIEW.md) · [FEATURED_POLICY](docs/FEATURED_POLICY.md) · [QUALITY_BENCHMARK](docs/QUALITY_BENCHMARK.md) |
+| LLM 与异步分析 | [LLM_AUTOMATION](docs/LLM_AUTOMATION.md) · [ASYNC_ANALYSIS](docs/ASYNC_ANALYSIS.md) · [LLM](docs/LLM.md) |
+| 产品覆盖、来源目录与筛选 | [PRODUCT_SCOPE](docs/PRODUCT_SCOPE.md) · [SOURCES](docs/SOURCES.md) · [SOURCE_COVERAGE](docs/SOURCE_COVERAGE.md) |
+| 部署、运维与局域网预览 | [DEPLOYMENT_PREPARATION](docs/DEPLOYMENT_PREPARATION.md) · [SERVER_DEPLOYMENT](docs/SERVER_DEPLOYMENT.md) · [M9_OPERATIONS](docs/M9_OPERATIONS.md) · [LAN_PREVIEW](docs/LAN_PREVIEW.md) |
+| 当前状态与开发计划 | [PLAN](docs/PLAN.md) |
+| 验证到什么程度、属于哪类证据 | [VALIDATION](docs/VALIDATION.md) |
+| 历史阶段报告与实验证据 | [archive/ 归档索引](docs/archive/README.md) |
 
-M2–M3 文档保留用于理解历史数据和实验，不是当前启动指南。旧审批确认写入、`serve-approved-rss` 已停用；旧 `export-rss` 只作技术诊断，不能替代带失效保护的自动 Feed。QQ 插件和独立 OneBot 发送路线继续冻结。
+**脱敏占位符**：文档中的 `SERVER_HOST`、`CDU_HOST`、`QQ_GROUP_ID`、`<credential>`、`/home/<user>`、`api.example.com` 等是脱敏后的占位符，不代表真实地址、群号或账号；需要真实值时请从私有配置获取，不要写回仓库。
+
+M2–M10 的阶段报告、验收记录和一次性交接已归档到 [`docs/archive/`](docs/archive/README.md)，**不代表当前状态**；少量被 `deploy/` 发布清单或开放 Issue 直接引用的历史文档保留在 `docs/` 根目录，清单见 [docs/README.md](docs/README.md)。旧审批确认写入、`serve-approved-rss` 已停用；旧 `export-rss` 只作技术诊断，不能替代带失效保护的自动 Feed。QQ 插件和独立 OneBot 发送路线继续冻结。
 
 ## 许可证
 

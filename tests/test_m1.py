@@ -168,7 +168,7 @@ def test_dns_exception_chain_is_distinct():
 
 
 def test_explicit_dns_override_retains_host_sni():
-    transport=ResolveTransport({'cxcyxy.cdu.edu.cn':'203.0.113.10'},{'cxcyxy.cdu.edu.cn'})
+    transport=ResolveTransport({'cxcyxy.cdu.edu.cn':'8.8.8.8'},{'cxcyxy.cdu.edu.cn'})
     transport.inner.close()
     calls=[]
     def handler(request):
@@ -177,12 +177,12 @@ def test_explicit_dns_override_retains_host_sni():
     transport.inner=httpx.MockTransport(handler)
     with transport:
         transport.handle_request(httpx.Request('GET','https://cxcyxy.cdu.edu.cn/jyjx/xkjs.htm'))
-    assert calls[0].url.host=='203.0.113.10'
+    assert calls[0].url.host=='8.8.8.8'
     assert calls[0].headers['host']=='cxcyxy.cdu.edu.cn'
     assert calls[0].extensions['sni_hostname']=='cxcyxy.cdu.edu.cn'
 
 
-@pytest.mark.parametrize('mapping',[{'cxcyxy.cdu.edu.cn':'127.0.0.1'},{'unknown.cdu.edu.cn':'203.0.113.10'}])
+@pytest.mark.parametrize('mapping',[{'cxcyxy.cdu.edu.cn':'127.0.0.1'},{'unknown.cdu.edu.cn':'8.8.8.8'}])
 def test_resolve_rejects_private_address_and_unknown_host(mapping):
     with pytest.raises(ValueError,match='configured host'):
         ResolveTransport(mapping,{'cxcyxy.cdu.edu.cn'})

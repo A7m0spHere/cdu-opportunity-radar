@@ -4,7 +4,7 @@
 
 ## #21 收尾
 
-实现基线 `c8c17dfe8e0a258900bcdee584eeece0ee6c581c` 已在远程 main。重新执行 `scripts/m10_offline_acceptance.py`，首次不补发、新增/更新各三方向、重复轮询、重启、503 不用旧缓存及源库只读通过；结果保存在 `artifacts/m10a-close-20261022/acceptance.json`。可审查[合成草稿节选](examples/rss-briefing.synthetic.md)，真实接入清单继续见 [消费契约](RSS_CONSUMER.md)。
+实现基线 `59028e41dc7e3ae1f13eb1244f117fb7f70966e0` 已在远程 main。重新执行 `scripts/m10_offline_acceptance.py`，首次不补发、新增/更新各三方向、重复轮询、重启、503 不用旧缓存及源库只读通过；结果保存在 `artifacts/m10a-close-20261022/acceptance.json`。可审查[合成草稿节选](examples/rss-briefing.synthetic.md)，真实接入清单继续见 [消费契约](RSS_CONSUMER.md)。
 
 Windows/Python 3.12 的原 CI 组被取消；本轮重跑后 Windows/Ubuntu × Python 3.11/3.12 四组全部成功，含全量离线回归、wheel 安装和安装后 smoke：[Actions 39609943248](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/runs/39609943248)。该 CI 只覆盖上述已提交基线，不覆盖本轮新增且尚未提交的 #23 脚本。
 

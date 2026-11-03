@@ -18,7 +18,7 @@
 | 监听与数据 | 应用 127.0.0.1:8765、CLI 烟雾 8766、HTTP 8870、HTTPS 9443；均仅环回且结束后关闭。三条合成原文、Mock 分析，再追加一条合成通知；官方采集和真实模型调用均为 0 |
 | HTTPS | 新建仅供测试的 1 天自签证书，SAN 包含 localhost/127.0.0.1，私钥 0600；客户端只信任指定测试证书，不关闭校验、不修改系统信任。没有申请真实域名证书 |
 
-安装的 wheel SHA-256 为 `d262b6b42dd7fe4a965043a1621e570d3e076daead0710db115230f6dc175998`，与 [Windows 准备记录](M9_PREPARATION_RESULTS.md) 相同。原生 runner 使用 `-I` 并检查模块来自隔离 venv 的 site-packages；测试源码及部署草稿的最终摘要见私有 `source-manifest-final.json`。包/解释器下载是测试依赖联网，不是业务采集或模型请求。
+安装的 wheel SHA-256 为 `d262b6b42dd7fe4a965043a1621e570d3e076daead0710db115230f6dc175998`，与 [Windows 准备记录](archive/M9_PREPARATION_RESULTS.md) 相同。原生 runner 使用 `-I` 并检查模块来自隔离 venv 的 site-packages；测试源码及部署草稿的最终摘要见私有 `source-manifest-final.json`。包/解释器下载是测试依赖联网，不是业务采集或模型请求。
 
 ## 实际结果
 

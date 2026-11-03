@@ -74,4 +74,4 @@ RSS 2.0 UTF-8，标准 `title/link/source/category/description/guid/pubDate`。�
 
 部署及 Linux 原生/真实手机验收分别保留在 #14、#6；本合同不授权公网监听或生产操作。
 
-本轮测试、安装包与浏览器证据见 [本地验收记录](RSS_V1_RESULTS.md)。
+本轮测试、安装包与浏览器证据见 [本地验收记录](archive/RSS_V1_RESULTS.md)。

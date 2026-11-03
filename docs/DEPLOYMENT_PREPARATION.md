@@ -2,7 +2,7 @@
 
 当前结论：**#14 的部署准备与隔离演练已完成，公网发布未执行。** 用户已暂缓手机/LAN 访问，当前 #6 门槛改为桌面和 Linux 原生，均有通过记录；#13 已关闭。补做了四阶段代码升级/回滚 37 项、现有 11 栏目访问/转载规则核查和页面非官方声明。完整结果见 [完成记录](M9_COMPLETION_RESULTS.md)、[运维方案](M9_OPERATIONS.md)、[来源与接入核查](M9_SOURCE_REVIEW.md)。真实公开目标、内容许可、证书与持续运行是后续上线条件，不再作为本轮准备阶段未完成。
 
-候选参数与待确认项见 `deploy/m9/targets.example.json`，默认采集关闭、模型关闭、付费模型预算 0、公网监听关闭。它是审核用默认关闭模板，不是最新验收台账，也不会被程序自动读取执行；当前结果另见 `deploy/m9/preparation-status.json`。#13 的 RSS 契约见 [RSS_V1.md](RSS_V1.md)，#6 当前进度见 [电脑端记录](M5C_DESKTOP_RESULTS.md)。
+候选参数与待确认项见 `deploy/m9/targets.example.json`，默认采集关闭、模型关闭、付费模型预算 0、公网监听关闭。它是审核用默认关闭模板，不是最新验收台账，也不会被程序自动读取执行；当前结果另见 `deploy/m9/preparation-status.json`。#13 的 RSS 契约见 [RSS_V1.md](RSS_V1.md)，#6 当前进度见 [电脑端记录](archive/M5C_DESKTOP_RESULTS.md)。
 
 ## 最小拓扑与信任边界
 
@@ -123,8 +123,8 @@ SQLite 副本通过标准 [Connection.backup](https://docs.python.org/3.12/libra
 
 | 门槛 | 当前状态 | 后续动作 |
 | --- | --- | --- |
-| #4 CI | `061d7ed` 的 Windows/Ubuntu × Python 3.11/3.12 四项成功 | [实际 Actions run](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/runs/39035853752)；该 CI 仅覆盖 061d7ed；本次收尾改动 CI 以对应交付提交为准 |
-| #6 桌面与 Linux 原生 | 在当前范围内通过；手机/LAN 与相应现场反馈按用户决定暂缓，不记通过 | [电脑阶段](M5C_DESKTOP_RESULTS.md) · [服务器记录](M9_SERVER_RESULTS.md) |
+| #4 CI | `4422351` 的 Windows/Ubuntu × Python 3.11/3.12 四项成功 | [实际 Actions run](https://github.com/A7m0spHere/cdu-opportunity-radar/actions/runs/39035853752)；该 CI 仅覆盖 4422351；本次收尾改动 CI 以对应交付提交为准 |
+| #6 桌面与 Linux 原生 | 在当前范围内通过；手机/LAN 与相应现场反馈按用户决定暂缓，不记通过 | [电脑阶段](archive/M5C_DESKTOP_RESULTS.md) · [服务器记录](M9_SERVER_RESULTS.md) |
 | #13 RSS 契约 | 已关闭，RSS 回归及原生/跨机增量通过 | 第三方 GUI 阅读器长期行为属于后续公开运行观察 |
 | 静态策略、离线恢复与原生链路 | Windows 准备与服务器原生验收均通过 | 测试为合成数据/Mock；不代替实际内容和持续运行验收 |
 | 目标地区/域名/来源规则 | 已核查并记录限制：档案上海；CDU 域名/主体未选、转载许可未取得 | [核查记录](M9_SOURCE_REVIEW.md)，准备完成，公开上线不放行 |
@@ -135,6 +135,6 @@ SQLite 副本通过标准 [Connection.backup](https://docs.python.org/3.12/libra
 
 遇到原文/数据库失效时保持失败关闭；遇到未授权公开监听、私有路由暴露、状态错库、TLS 验证失败或无法回滚时停止该演练入口并保留证据。Windows 离线工具不会自动部署；服务器阶段由操作员显式启动并停止独立测试实例，没有安装/enable 持久服务、真实采集、调模型或发送业务通知。
 
-Windows 阶段见 [M9 准备验收记录](M9_PREPARATION_RESULTS.md)，最新阶段见 [M9 服务器验收记录](M9_SERVER_RESULTS.md)。
+Windows 阶段见 [M9 准备验收记录](archive/M9_PREPARATION_RESULTS.md)，最新阶段见 [M9 服务器验收记录](M9_SERVER_RESULTS.md)。
 
 当前收尾结果见 [M9 完成记录](M9_COMPLETION_RESULTS.md)。手机/LAN 暂缓的决定仅取消本轮交付门槛，不将未执行项目填成通过，也不删除既有响应式页面或 LAN 代码。

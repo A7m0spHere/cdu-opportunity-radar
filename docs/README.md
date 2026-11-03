@@ -89,6 +89,8 @@
 | [RSS_FRESHNESS_FIX_20261025](RSS_FRESHNESS_FIX_20261025.md) | `deploy/m10/release-files.json` 引用 |
 | [ISSUE_AUDIT_20261027](ISSUE_AUDIT_20261027.md) | `deploy/m10/release-files.json` 引用 |
 
+**关于旧 GitHub Issue 编号**：文档中的 `#3`–`#27` 指 2026-11-03 仓库重建前的 issue / PR 编号。重建后编号空间已重置，旧链接不再可用；相关结论已并入各阶段报告与 [PLAN](PLAN.md) / [VALIDATION](VALIDATION.md)。重建前的 issue 与 PR 全文另存为本地归档，不随仓库发布。
+
 **引用这些历史文档时，必须按 [VALIDATION](VALIDATION.md) 的证据分级说明它属于哪一类证据**（离线模拟 / 真实外网采集 / 真实服务器验证 / 生产运行 / 人工评测）。离线或合成环境的"通过"不等于真实环境通过。
 
 ---
